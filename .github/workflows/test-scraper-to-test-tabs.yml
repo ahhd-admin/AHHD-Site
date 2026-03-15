@@ -1,4 +1,4 @@
-name: Test ACHC Scraper to Test Tabs
+name: Test ACHC Raw Dump to Test Tab
 
 on:
   workflow_dispatch:
@@ -23,11 +23,11 @@ jobs:
           pip install -r requirements.txt
           playwright install chromium
 
-      - name: Run DOM-wide ACHC test and push to test tabs
+      - name: Run raw-only ACHC test and push to test tab
         working-directory: ./scrapers
         env:
           GOOGLE_SHEETS_WEB_APP_URL: ${{ secrets.GOOGLE_SHEETS_WEB_APP_URL }}
-          LIMIT_LOCATIONS: 100
+          LIMIT_LOCATIONS: 25
           TEST_MODE: true
           TEST_PROGRAMS: Home Health
           TEST_STATES: Texas
