@@ -8,7 +8,7 @@ on:
 jobs:
   scrape-and-merge:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 45
 
     steps:
       - name: Checkout repository
@@ -25,7 +25,7 @@ jobs:
           pip install -r requirements.txt
           playwright install chromium
 
-      - name: Run ACHC scraper and write to Google Sheets
+      - name: Run ACHC scraper and write raw + merged tabs
         working-directory: ./scrapers
         env:
           GOOGLE_SHEETS_WEB_APP_URL: ${{ secrets.GOOGLE_SHEETS_WEB_APP_URL }}
