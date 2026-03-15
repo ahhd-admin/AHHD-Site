@@ -31,7 +31,12 @@ function doPost(e) {
       "raw_index",
       "container_type",
       "searched_program_type",
-      "searched_state",
+      "search_trigger_state",
+      "result_scope",
+      "raw_name_line",
+      "raw_address_block",
+      "parsed_state_abbr",
+      "matches_trigger_state",
       "raw_text",
       "source_url",
       "last_seen"
