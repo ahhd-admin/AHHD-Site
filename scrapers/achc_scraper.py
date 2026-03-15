@@ -9,7 +9,7 @@ import aiohttp
 from dotenv import load_dotenv
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
 
-from geocode_helper import geocode_locations
+#from geocode_helper import geocode_locations
 
 load_dotenv()
 
