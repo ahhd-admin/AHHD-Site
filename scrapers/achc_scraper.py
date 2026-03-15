@@ -436,11 +436,11 @@ async def main():
     unique_rows = deduplicate_rows(rows)
     print(f"Scraped {len(rows)} total rows, {len(unique_rows)} unique")
 
-    print("Geocoding locations...")
-    geocoded_rows = await geocode_locations(unique_rows)
+    #print("Geocoding locations...")
+    #geocoded_rows = await geocode_locations(unique_rows)
 
-    geocoded_count = sum(1 for r in geocoded_rows if r.get("latitude") is not None)
-    print(f"Geocoded {geocoded_count}/{len(geocoded_rows)} locations")
+    #geocoded_count = sum(1 for r in geocoded_rows if r.get("latitude") is not None)
+    #print(f"Geocoded {geocoded_count}/{len(geocoded_rows)} locations")
 
     await write_to_google_sheets(geocoded_rows)
 
