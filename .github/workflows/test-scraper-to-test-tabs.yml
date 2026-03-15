@@ -23,11 +23,11 @@ jobs:
           pip install -r requirements.txt
           playwright install chromium
 
-      - name: Run one-state ACHC test and push to test tabs
+      - name: Run DOM-wide ACHC test and push to test tabs
         working-directory: ./scrapers
         env:
           GOOGLE_SHEETS_WEB_APP_URL: ${{ secrets.GOOGLE_SHEETS_WEB_APP_URL }}
-          LIMIT_LOCATIONS: 25
+          LIMIT_LOCATIONS: 100
           TEST_MODE: true
           TEST_PROGRAMS: Home Health
           TEST_STATES: Texas
