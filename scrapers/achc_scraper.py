@@ -181,7 +181,8 @@ async def scrape_raw_rows(page, searched_program: str, searched_state_label: str
 
 
 async def scrape_program_state(page, program: str, state_label: str) -> List[dict]:
-    print(f"Fetching: {program} / {state_label}")
+    state_log = state_label if state_label else "NO STATE FILTER"
+    print(f"Fetching: {program} / {state_log}")
 
     await page.goto(AMS_URL, timeout=60000)
     await page.wait_for_load_state("domcontentloaded")
@@ -197,7 +198,13 @@ async def scrape_program_state(page, program: str, state_label: str) -> List[dic
     print(f"  Selected country option: {country_label}")
 
     await prog_select.select_option(label=program)
-    await state_select.select_option(label=state_label)
+    
+    if state_label:
+        await state_select.select_option(label=state_label)
+        print(f"  Selected state: {state_label}")
+    else:
+        print("  No state filter selected")
+    
     await polite_pause()
 
     await click_search(page)
