@@ -15,122 +15,32 @@ AMS_URL = "https://ams.achc.org/accredited_organizations.aspx"
 
 PROGRAMS = ["Home Care", "Home Health", "Hospice"]
 
-# Set this to a single state for fast testing.
-SEARCH_STATES = [
-    "Illinois"
-]
+# Single-state test
+SEARCH_STATES = ["Illinois"]
+
+LIMIT_LOCATIONS = int(os.getenv("LIMIT_LOCATIONS", "0"))
+GOOGLE_SHEETS_URL = os.getenv("GOOGLE_SHEETS_WEB_APP_URL")
+
+if not GOOGLE_SHEETS_URL:
+    raise ValueError("Missing GOOGLE_SHEETS_WEB_APP_URL in environment variables")
+
+# -----------------------------
+# State normalization
+# -----------------------------
 
 STATE_DISPLAY_MAP = {
-    "Alabama": "Alabama",
-    "Alaska": "Alaska",
-    "Arizona": "Arizona",
-    "Arkansas": "Arkansas",
-    "California": "California",
-    "Colorado": "Colorado",
-    "Connecticut": "Connecticut",
-    "Delaware": "Delaware",
     "District of Columbia": "Washington, D.C.",
-    "Washington, D.C.": "Washington, D.C.",
-    "DC": "Washington, D.C.",
-    "Florida": "Florida",
-    "Georgia": "Georgia",
-    "Hawaii": "Hawaii",
-    "Idaho": "Idaho",
-    "Illinois": "Illinois",
-    "Indiana": "Indiana",
-    "Iowa": "Iowa",
-    "Kansas": "Kansas",
-    "Kentucky": "Kentucky",
-    "Louisiana": "Louisiana",
-    "Maine": "Maine",
-    "Maryland": "Maryland",
-    "Massachusetts": "Massachusetts",
-    "Michigan": "Michigan",
-    "Minnesota": "Minnesota",
-    "Mississippi": "Mississippi",
-    "Missouri": "Missouri",
-    "Montana": "Montana",
-    "Nebraska": "Nebraska",
-    "Nevada": "Nevada",
-    "New Hampshire": "New Hampshire",
-    "New Jersey": "New Jersey",
-    "New Mexico": "New Mexico",
-    "New York": "New York",
-    "North Carolina": "North Carolina",
-    "North Dakota": "North Dakota",
-    "Ohio": "Ohio",
-    "Oklahoma": "Oklahoma",
-    "Oregon": "Oregon",
-    "Pennsylvania": "Pennsylvania",
-    "Rhode Island": "Rhode Island",
-    "South Carolina": "South Carolina",
-    "South Dakota": "South Dakota",
-    "Tennessee": "Tennessee",
-    "Texas": "Texas",
-    "Utah": "Utah",
-    "Vermont": "Vermont",
-    "Virginia": "Virginia",
-    "Washington": "Washington",
-    "West Virginia": "West Virginia",
-    "Wisconsin": "Wisconsin",
-    "Wyoming": "Wyoming"
+    "DC": "Washington, D.C."
 }
 
 STATE_ABBR_MAP = {
-    "Alabama": "AL",
-    "Alaska": "AK",
-    "Arizona": "AZ",
-    "Arkansas": "AR",
-    "California": "CA",
-    "Colorado": "CO",
-    "Connecticut": "CT",
-    "Delaware": "DE",
-    "District of Columbia": "DC",
-    "Washington, D.C.": "DC",
-    "DC": "DC",
-    "Florida": "FL",
-    "Georgia": "GA",
-    "Hawaii": "HI",
-    "Idaho": "ID",
     "Illinois": "IL",
-    "Indiana": "IN",
-    "Iowa": "IA",
-    "Kansas": "KS",
-    "Kentucky": "KY",
-    "Louisiana": "LA",
-    "Maine": "ME",
-    "Maryland": "MD",
-    "Massachusetts": "MA",
-    "Michigan": "MI",
-    "Minnesota": "MN",
-    "Mississippi": "MS",
-    "Missouri": "MO",
-    "Montana": "MT",
-    "Nebraska": "NE",
-    "Nevada": "NV",
-    "New Hampshire": "NH",
-    "New Jersey": "NJ",
-    "New Mexico": "NM",
-    "New York": "NY",
-    "North Carolina": "NC",
-    "North Dakota": "ND",
-    "Ohio": "OH",
-    "Oklahoma": "OK",
-    "Oregon": "OR",
-    "Pennsylvania": "PA",
-    "Rhode Island": "RI",
-    "South Carolina": "SC",
-    "South Dakota": "SD",
-    "Tennessee": "TN",
-    "Texas": "TX",
-    "Utah": "UT",
-    "Vermont": "VT",
-    "Virginia": "VA",
-    "Washington": "WA",
-    "West Virginia": "WV",
-    "Wisconsin": "WI",
-    "Wyoming": "WY"
+    "District of Columbia": "DC"
 }
+
+# -----------------------------
+# Country helpers
+# -----------------------------
 
 COUNTRY_PREFERRED_LABELS = [
     "USA",
@@ -149,211 +59,253 @@ COUNTRY_PARTIAL_MATCHES = [
     " us "
 ]
 
-LIMIT_LOCATIONS = int(os.getenv("LIMIT_LOCATIONS", "0"))
-GOOGLE_SHEETS_URL = os.getenv("GOOGLE_SHEETS_WEB_APP_URL")
-
-if not GOOGLE_SHEETS_URL:
-    raise ValueError("Missing GOOGLE_SHEETS_WEB_APP_URL in environment variables")
-
-
-async def polite_pause(min_seconds: float = 0.35, max_seconds: float = 0.9):
-    await asyncio.sleep(random.uniform(min_seconds, max_seconds))
-
 
 def normalize_text(value: str) -> str:
     return re.sub(r"\s+", " ", value.strip().lower())
 
 
+# -----------------------------
+# Parsing helpers
+# -----------------------------
+
 def split_city_state_zip(text: str) -> Tuple[str, str, str]:
+
     if not text:
-        return ("", "", "")
+        return "", "", ""
 
-    m = re.match(r"^(.*?),\s*([A-Z]{2})\s+(\d{5}(?:-\d{4})?)$", text.strip())
-    if not m:
-        return ("", "", "")
+    match = re.match(r"^(.*?),\s*([A-Z]{2})\s+(\d{5}(?:-\d{4})?)$", text.strip())
 
-    return m.group(1), m.group(2), m.group(3)
+    if not match:
+        return "", "", ""
+
+    return match.group(1), match.group(2), match.group(3)
 
 
 def normalize_state_display(search_label: str, scraped_state_abbr: str = "") -> str:
+
     if scraped_state_abbr:
-        for state_name, abbr in STATE_ABBR_MAP.items():
-            if abbr == scraped_state_abbr and state_name in STATE_DISPLAY_MAP:
-                return STATE_DISPLAY_MAP[state_name]
+        for k, v in STATE_ABBR_MAP.items():
+            if v == scraped_state_abbr:
+                return k
+
     return STATE_DISPLAY_MAP.get(search_label, search_label)
 
 
 def normalize_state_abbr(search_label: str, scraped_state_abbr: str = "") -> str:
+
     if scraped_state_abbr:
         return scraped_state_abbr
+
     return STATE_ABBR_MAP.get(search_label, "")
 
 
+# -----------------------------
+# Dropdown detection
+# -----------------------------
+
 async def find_select_with_programs(page):
+
     selects = page.locator("select")
+
     for i in range(await selects.count()):
+
         sel = selects.nth(i)
         opts = [t.strip() for t in await sel.locator("option").all_inner_texts()]
-        if all(any(p in o for o in opts) for p in PROGRAMS):
+
+        if "Home Care" in opts and "Home Health" in opts:
             return sel
+
     return None
 
 
 async def find_select_with_states(page):
-    states_set = set(SEARCH_STATES)
+
+    state_markers = {
+        "Illinois",
+        "California",
+        "Texas",
+        "Florida",
+        "New York",
+        "District of Columbia"
+    }
+
     selects = page.locator("select")
+
     for i in range(await selects.count()):
+
         sel = selects.nth(i)
         opts = [t.strip() for t in await sel.locator("option").all_inner_texts()]
-        hits = sum(1 for o in opts if o in states_set)
-        if hits >= 1:
+
+        hits = sum(1 for o in opts if o in state_markers)
+
+        if hits >= 4:
             return sel
+
     return None
 
 
 async def find_country_select_and_value(page):
+
     selects = page.locator("select")
 
     for i in range(await selects.count()):
+
         sel = selects.nth(i)
         option_locator = sel.locator("option")
         option_count = await option_locator.count()
 
         options = []
+
         for j in range(option_count):
+
             opt = option_locator.nth(j)
             label = (await opt.inner_text()).strip()
             value = (await opt.get_attribute("value")) or ""
+
             options.append({
                 "label": label,
                 "value": value
             })
 
-        labels = [o["label"] for o in options]
-        normalized_labels = [normalize_text(label) for label in labels]
+        normalized_labels = [normalize_text(o["label"]) for o in options]
 
-        if not any(
-            keyword in label
-            for label in normalized_labels
-            for keyword in ["usa", "united states", "canada", "mexico"]
-        ):
+        if not any(x in " ".join(normalized_labels) for x in ["usa", "united states"]):
             continue
 
         for preferred in COUNTRY_PREFERRED_LABELS:
-            preferred_norm = normalize_text(preferred)
+
+            pref_norm = normalize_text(preferred)
+
             for option in options:
-                if normalize_text(option["label"]) == preferred_norm:
+                if normalize_text(option["label"]) == pref_norm:
                     return sel, option["value"], option["label"]
 
         for option in options:
-            label_norm = normalize_text(option["label"])
-            if "united states" in label_norm or label_norm in ["usa", "us", "u.s.", "u.s.a."]:
-                return sel, option["value"], option["label"]
 
-        for option in options:
-            label_norm = f" {normalize_text(option['label'])} "
-            if any(token in label_norm for token in COUNTRY_PARTIAL_MATCHES):
+            label_norm = normalize_text(option["label"])
+
+            if "united states" in label_norm or label_norm in ["usa", "us"]:
                 return sel, option["value"], option["label"]
 
     return None, None, None
 
 
+# -----------------------------
+# Search submission
+# -----------------------------
+
 async def click_search(page):
-    candidates = [
+
+    selectors = [
+        "input[value='Find']",
         "input[value='Search']",
-        "#MainContent_btnSearch",
-        "input[type='submit']",
-        "button:has-text('Search')",
-        "button:has-text('Submit')"
+        "button:has-text('Find')",
+        "button:has-text('Search')"
     ]
-    for sel in candidates:
+
+    for sel in selectors:
+
         if await page.locator(sel).count():
             await page.locator(sel).first.click()
             return
+
     await page.keyboard.press("Enter")
 
 
 async def wait_for_results(page):
-    await page.wait_for_timeout(1800)
+
+    await page.wait_for_load_state("networkidle")
+    await page.wait_for_timeout(2500)
 
 
-async def scrape_current_page_rows(page, program: str, state_label: str) -> List[dict]:
+# -----------------------------
+# RESULT PARSER
+# -----------------------------
+
+async def scrape_current_page_rows(page, program: str, state_label: str):
+
     rows = []
-    tables = page.locator("table")
 
-    for i in range(await tables.count()):
-        table = tables.nth(i)
+    blocks = page.locator("text=Show/Hide Accreditation Details").locator(
+        "xpath=ancestor::tr"
+    )
 
-        try:
-            trs = await table.locator("tr").all()
-        except Exception:
+    block_count = await blocks.count()
+
+    for i in range(block_count):
+
+        block = blocks.nth(i)
+
+        text = await block.inner_text()
+
+        lines = [l.strip() for l in text.split("\n") if l.strip()]
+
+        if len(lines) < 3:
             continue
 
-        if len(trs) < 2:
-            continue
+        name = lines[0]
+        address = lines[1]
+        city_state_zip = lines[2]
 
-        parsed_any = False
+        city, scraped_state_abbr, zipc = split_city_state_zip(city_state_zip)
 
-        for tr in trs[1:]:
-            tds = [td.strip() for td in await tr.locator("td").all_inner_texts()]
-            if len(tds) < 3:
-                continue
+        state_display = normalize_state_display(state_label, scraped_state_abbr)
+        state_abbr = normalize_state_abbr(state_label, scraped_state_abbr)
 
-            name = tds[0]
-            addr1 = tds[1]
-            csz = tds[2]
-            phone = tds[3] if len(tds) > 3 else ""
-
-            if not name or not addr1:
-                continue
-
-            city, scraped_state_abbr, zipc = split_city_state_zip(csz)
-            state_display = normalize_state_display(state_label, scraped_state_abbr)
-            state_abbr = normalize_state_abbr(state_label, scraped_state_abbr)
-
-            rows.append({
-                "organization": name,
-                "program": program,
-                "address": addr1,
-                "city": city,
-                "state": state_display,
-                "state_abbr": state_abbr,
-                "zip": zipc,
-                "phone": phone,
-                "latitude": "",
-                "longitude": "",
-                "source_url": AMS_URL,
-                "last_seen": datetime.utcnow().isoformat()
-            })
-            parsed_any = True
-
-        if parsed_any:
-            break
+        rows.append({
+            "organization": name,
+            "program": program,
+            "address": address,
+            "city": city,
+            "state": state_display,
+            "state_abbr": state_abbr,
+            "zip": zipc,
+            "phone": "",
+            "latitude": "",
+            "longitude": "",
+            "source_url": AMS_URL,
+            "last_seen": datetime.utcnow().isoformat()
+        })
 
     return rows
 
 
+# -----------------------------
+# Debug helpers
+# -----------------------------
+
 async def save_debug_artifacts(page, label: str):
+
     os.makedirs("debug", exist_ok=True)
+
     safe = re.sub(r"[^a-zA-Z0-9_-]", "_", label)
+
     await page.screenshot(path=f"debug/{safe}.png", full_page=True)
+
     html = await page.content()
+
     with open(f"debug/{safe}.html", "w", encoding="utf-8") as f:
         f.write(html)
 
 
+# -----------------------------
+# Deduplication
+# -----------------------------
+
 def deduplicate_rows(rows: List[dict]) -> List[dict]:
+
     seen = set()
     unique = []
 
     for row in rows:
+
         key = (
-            row["organization"].strip().lower(),
-            row["address"].strip().lower(),
-            row["city"].strip().lower(),
-            row["state_abbr"].strip().upper(),
-            row["zip"].strip()
+            row["organization"].lower(),
+            row["address"].lower(),
+            row["city"].lower(),
+            row["zip"]
         )
+
         if key not in seen:
             seen.add(key)
             unique.append(row)
@@ -361,127 +313,115 @@ def deduplicate_rows(rows: List[dict]) -> List[dict]:
     return unique
 
 
-async def run_scrape() -> List[dict]:
+# -----------------------------
+# Scraper driver
+# -----------------------------
+
+async def run_scrape():
+
     all_rows = []
     debug_saved = 0
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=True,
-            args=["--disable-dev-shm-usage", "--no-sandbox"]
-        )
-        context = await browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122 Safari/537.36"
-        )
-        page = await context.new_page()
+
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page()
 
         for program in PROGRAMS:
             for state_label in SEARCH_STATES:
-                if LIMIT_LOCATIONS > 0 and len(all_rows) >= LIMIT_LOCATIONS:
-                    all_rows = all_rows[:LIMIT_LOCATIONS]
-                    break
 
                 print(f"Fetching: {program} / {state_label}")
 
-                await page.goto(AMS_URL, timeout=60000)
-                await page.wait_for_load_state("domcontentloaded")
+                await page.goto(AMS_URL)
 
                 prog_select = await find_select_with_programs(page)
                 state_select = await find_select_with_states(page)
-                country_select, country_value, country_label = await find_country_select_and_value(page)
 
-                if prog_select is None or state_select is None or country_select is None or country_value is None:
-                    print("  Could not locate one or more dropdowns. Skipping.")
+                country_select, country_value, country_label = \
+                    await find_country_select_and_value(page)
+
+                if not prog_select or not state_select or not country_select:
+                    print("Could not find dropdowns")
+
                     if debug_saved < 2:
-                        await save_debug_artifacts(page, f"missing_dropdowns_{program}_{state_label}")
+                        await save_debug_artifacts(page, "dropdown_failure")
                         debug_saved += 1
+
                     continue
 
                 await country_select.select_option(value=country_value)
-                print(f"  Selected country option: {country_label}")
+                print("Selected country:", country_label)
 
                 await prog_select.select_option(label=program)
                 await state_select.select_option(label=state_label)
-                await polite_pause(0.15, 0.35)
 
                 await click_search(page)
+
                 await wait_for_results(page)
-                await polite_pause(0.25, 0.6)
 
                 page_rows = await scrape_current_page_rows(page, program, state_label)
-                print(f"  Found {len(page_rows)} rows on first page")
 
-                if not page_rows and debug_saved < 4:
+                print(f"Found {len(page_rows)} rows")
+
+                if not page_rows and debug_saved < 3:
+
                     await save_debug_artifacts(page, f"no_rows_{program}_{state_label}")
                     debug_saved += 1
 
                 all_rows.extend(page_rows)
-
-                while page_rows:
-                    if LIMIT_LOCATIONS > 0 and len(all_rows) >= LIMIT_LOCATIONS:
-                        all_rows = all_rows[:LIMIT_LOCATIONS]
-                        break
-
-                    next_link = page.locator("a:has-text('Next'), a[title*='Next']")
-                    if await next_link.count() == 0:
-                        break
-
-                    await next_link.first.click()
-                    await wait_for_results(page)
-                    await polite_pause(0.2, 0.5)
-
-                    page_rows = await scrape_current_page_rows(page, program, state_label)
-                    print(f"  Found {len(page_rows)} rows on next page")
-
-                    if not page_rows:
-                        break
-
-                    all_rows.extend(page_rows)
-
-                await polite_pause(0.25, 0.5)
-
-            if LIMIT_LOCATIONS > 0 and len(all_rows) >= LIMIT_LOCATIONS:
-                break
 
         await browser.close()
 
     return all_rows
 
 
+# -----------------------------
+# Google Sheets writer
+# -----------------------------
+
 async def write_to_google_sheets(rows: List[dict]):
+
     payload = {
         "action": "replace_all",
         "rows": rows
     }
 
     async with aiohttp.ClientSession() as session:
+
         async with session.post(
             GOOGLE_SHEETS_URL,
             json=payload,
-            headers={"Content-Type": "application/json"},
-            timeout=aiohttp.ClientTimeout(total=120)
+            headers={"Content-Type": "application/json"}
         ) as response:
-            text = await response.text()
-            print(f"Google Sheets response status: {response.status}")
-            print(f"Google Sheets response body: {text[:500]}")
-            if response.status != 200:
-                raise Exception(f"Google Sheets write failed with HTTP {response.status}: {text}")
 
+            text = await response.text()
+
+            print("Google Sheets response:", response.status)
+
+            if response.status != 200:
+                raise Exception(text)
+
+
+# -----------------------------
+# Main
+# -----------------------------
 
 async def main():
+
     print("Starting ACHC scraper...")
+
     rows = await run_scrape()
 
     if not rows:
         raise Exception("No rows scraped")
 
     unique_rows = deduplicate_rows(rows)
-    print(f"Scraped {len(rows)} total rows, {len(unique_rows)} unique")
+
+    print("Total rows:", len(unique_rows))
 
     await write_to_google_sheets(unique_rows)
 
     print("Scraper completed successfully")
-    print("Data written to Google Sheets")
 
 
 if __name__ == "__main__":
