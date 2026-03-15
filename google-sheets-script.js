@@ -10,51 +10,104 @@ function doGet(e) {
 function doPost(e) {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const sheetName = "Providers";
-    let sheet = ss.getSheetByName(sheetName);
 
-    if (!sheet) {
-      sheet = ss.insertSheet(sheetName);
+    const rawSheetName = "Raw_ACHC";
+    const mergedSheetName = "Merged_Locations";
+
+    let rawSheet = ss.getSheetByName(rawSheetName);
+    let mergedSheet = ss.getSheetByName(mergedSheetName);
+
+    if (!rawSheet) {
+      rawSheet = ss.insertSheet(rawSheetName);
     }
 
-    const headers = [
-      "organization",
-      "program",
+    if (!mergedSheet) {
+      mergedSheet = ss.insertSheet(mergedSheetName);
+    }
+
+    const rawHeaders = [
+      "location_key",
+      "display_name",
+      "legal_name",
+      "dba_name",
+      "searched_program_type",
+      "accreditation_program",
+      "services",
       "address",
       "city",
       "state",
       "state_abbr",
       "zip",
       "phone",
+      "website_url",
       "latitude",
       "longitude",
+      "accreditation_dates",
       "source_url",
       "last_seen"
     ];
 
-    ensureHeaders_(sheet, headers);
+    const mergedHeaders = [
+      "location_key",
+      "display_name",
+      "legal_name",
+      "dba_names",
+      "name_variants",
+      "program_types",
+      "accreditation_programs",
+      "services",
+      "address",
+      "city",
+      "state",
+      "state_abbr",
+      "zip",
+      "phone",
+      "website_url",
+      "latitude",
+      "longitude",
+      "accreditation_dates",
+      "source_urls",
+      "source_count",
+      "last_seen",
+      "enhanced_listing"
+    ];
+
+    ensureHeaders_(rawSheet, rawHeaders);
+    ensureHeaders_(mergedSheet, mergedHeaders);
 
     if (!e || !e.postData || !e.postData.contents) {
-      return jsonResponse_({ ok: false, error: "No POST body received" });
+      return jsonResponse_({
+        ok: false,
+        error: "No POST body received"
+      });
     }
 
     const payload = JSON.parse(e.postData.contents);
     const action = payload.action || "replace_all";
-    const rows = Array.isArray(payload.rows) ? payload.rows : [];
+    const rawRows = Array.isArray(payload.raw_rows) ? payload.raw_rows : [];
+    const mergedRows = Array.isArray(payload.merged_rows) ? payload.merged_rows : [];
 
     if (action === "replace_all") {
-      clearDataKeepHeaders_(sheet, headers);
+      clearDataKeepHeaders_(rawSheet, rawHeaders);
+      clearDataKeepHeaders_(mergedSheet, mergedHeaders);
 
-      if (rows.length > 0) {
-        const values = rows.map(row => headers.map(h => normalizeValue_(row[h])));
-        sheet.getRange(2, 1, values.length, headers.length).setValues(values);
+      if (rawRows.length > 0) {
+        const rawValues = rawRows.map(row => rawHeaders.map(h => normalizeValue_(row[h])));
+        rawSheet.getRange(2, 1, rawValues.length, rawHeaders.length).setValues(rawValues);
+      }
+
+      if (mergedRows.length > 0) {
+        const mergedValues = mergedRows.map(row => mergedHeaders.map(h => normalizeValue_(row[h])));
+        mergedSheet.getRange(2, 1, mergedValues.length, mergedHeaders.length).setValues(mergedValues);
       }
 
       return jsonResponse_({
         ok: true,
         action: "replace_all",
-        rows_received: rows.length,
-        sheet_name: sheetName
+        raw_rows_received: rawRows.length,
+        merged_rows_received: mergedRows.length,
+        raw_sheet_name: rawSheetName,
+        merged_sheet_name: mergedSheetName
       });
     }
 
