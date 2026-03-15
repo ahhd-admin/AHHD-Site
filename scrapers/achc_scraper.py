@@ -295,8 +295,8 @@ async def wait_for_results(page):
 
 async def scrape_current_page_rows(page, searched_program: str, searched_state_label: str) -> List[dict]:
     """
-    TEST PATH: intentionally broad DOM extraction from all detail links on the page.
-    This is not the final production-scoped parser.
+    TEST PATH: broad DOM extraction from all detail links on the page.
+    Tries both table-row and div-container ancestors.
     """
     rows = []
 
@@ -306,11 +306,28 @@ async def scrape_current_page_rows(page, searched_program: str, searched_state_l
 
     for i in range(link_count):
         link = detail_links.nth(i)
-        container = link.locator("xpath=ancestor::tr[1]")
 
-        try:
-            text = await container.inner_text()
-        except Exception:
+        candidate_locators = [
+            link.locator("xpath=ancestor::tr[1]"),
+            link.locator("xpath=ancestor::div[contains(@class, 'rgRow')][1]"),
+            link.locator("xpath=ancestor::div[contains(@class, 'result')][1]"),
+            link.locator("xpath=ancestor::div[1]")
+        ]
+
+        text = ""
+        chosen_container = None
+
+        for candidate in candidate_locators:
+            try:
+                candidate_text = await candidate.inner_text()
+                if candidate_text and "Show/Hide Accreditation Details" in candidate_text:
+                    text = candidate_text
+                    chosen_container = candidate
+                    break
+            except Exception:
+                continue
+
+        if not text:
             continue
 
         lines = [line.strip() for line in text.split("\n") if line.strip()]
