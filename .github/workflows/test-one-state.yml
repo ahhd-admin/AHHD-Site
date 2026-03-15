@@ -6,7 +6,7 @@ on:
 jobs:
   test-one-state:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
 
     steps:
       - name: Checkout repository
@@ -26,15 +26,7 @@ jobs:
       - name: Run one-state scraper test
         working-directory: ./scrapers
         env:
-          GOOGLE_SHEETS_WEB_APP_URL: ${{ secrets.GOOGLE_SHEETS_WEB_APP_URL }}
           LIMIT_LOCATIONS: 25
+          GOOGLE_SHEETS_WEB_APP_URL: https://example.com/not-used-in-test
         run: |
           python run_scraper_and_merge.py
-
-      - name: Upload debug artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: scraper-debug-${{ github.run_number }}
-          path: scrapers/debug/**
-          retention-days: 7
