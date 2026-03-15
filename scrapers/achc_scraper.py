@@ -22,9 +22,14 @@ TEST_MODE = os.getenv("TEST_MODE", "false").lower() == "true"
 
 TEST_PROGRAMS_ENV = os.getenv("TEST_PROGRAMS", "").strip()
 TEST_STATES_ENV = os.getenv("TEST_STATES", "").strip()
+NO_STATE_FILTER = os.getenv("NO_STATE_FILTER", "false").lower() == "true"
 
 PROGRAMS = [p.strip() for p in TEST_PROGRAMS_ENV.split(",") if p.strip()] if TEST_PROGRAMS_ENV else DEFAULT_PROGRAMS
-SEARCH_STATES = [s.strip() for s in TEST_STATES_ENV.split(",") if s.strip()] if TEST_STATES_ENV else DEFAULT_STATES
+
+if NO_STATE_FILTER:
+    SEARCH_STATES = [None]
+else:
+    SEARCH_STATES = [s.strip() for s in TEST_STATES_ENV.split(",") if s.strip()] if TEST_STATES_ENV else DEFAULT_STATES
 
 if not GOOGLE_SHEETS_URL:
     raise ValueError("Missing GOOGLE_SHEETS_WEB_APP_URL in environment variables")
