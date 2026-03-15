@@ -1,13 +1,14 @@
 import asyncio
-import re
 import os
 import random
+import re
 from datetime import datetime
 from typing import List, Tuple
 
-from playwright.async_api import async_playwright
 import aiohttp
 from dotenv import load_dotenv
+from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
+
 from geocode_helper import geocode_locations
 
 load_dotenv()
@@ -17,34 +18,32 @@ AMS_URL = "https://ams.achc.org/accredited_organizations.aspx"
 PROGRAMS = ["Home Care", "Home Health", "Hospice"]
 
 STATES = [
-    "Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado", "Connecticut", "Delaware",
-    "District of Columbia", "Florida", "Georgia", "Hawaii", "Idaho", "Illinois", "Indiana", "Iowa",
-    "Kansas", "Kentucky", "Louisiana", "Maine", "Maryland", "Massachusetts", "Michigan", "Minnesota",
-    "Mississippi", "Missouri", "Montana", "Nebraska", "Nevada", "New Hampshire", "New Jersey",
-    "New Mexico", "New York", "North Carolina", "North Dakota", "Ohio", "Oklahoma", "Oregon",
-    "Pennsylvania", "Rhode Island", "South Carolina", "South Dakota", "Tennessee", "Texas", "Utah",
-    "Vermont", "Virginia", "Washington", "West Virginia", "Wisconsin", "Wyoming"
+    "Alabama","Alaska","Arizona","Arkansas","California","Colorado","Connecticut","Delaware",
+    "District of Columbia","Florida","Georgia","Hawaii","Idaho","Illinois","Indiana","Iowa",
+    "Kansas","Kentucky","Louisiana","Maine","Maryland","Massachusetts","Michigan","Minnesota",
+    "Mississippi","Missouri","Montana","Nebraska","Nevada","New Hampshire","New Jersey",
+    "New Mexico","New York","North Carolina","North Dakota","Ohio","Oklahoma","Oregon",
+    "Pennsylvania","Rhode Island","South Carolina","South Dakota","Tennessee","Texas","Utah",
+    "Vermont","Virginia","Washington","West Virginia","Wisconsin","Wyoming"
 ]
 
 LIMIT_LOCATIONS = int(os.getenv("LIMIT_LOCATIONS", "0"))
 GOOGLE_SHEETS_URL = os.getenv("GOOGLE_SHEETS_WEB_APP_URL")
 
 if not GOOGLE_SHEETS_URL:
-    raise ValueError("Missing GOOGLE_SHEETS_WEB_APP_URL in environment variables or .env")
+    raise ValueError("Missing GOOGLE_SHEETS_WEB_APP_URL in environment variables")
 
 
-async def polite_pause(min_seconds: float = 2.5, max_seconds: float = 4.0):
+async def polite_pause(min_seconds: float = 1.2, max_seconds: float = 2.2):
     await asyncio.sleep(random.uniform(min_seconds, max_seconds))
 
 
 def split_city_state_zip(text: str) -> Tuple[str, str, str]:
     if not text:
         return ("", "", "")
-
     m = re.match(r"^(.*?),\s*([A-Z]{2})\s+(\d{5}(?:-\d{4})?)$", text.strip())
     if not m:
         return ("", "", "")
-
     return m.group(1), m.group(2), m.group(3)
 
 
@@ -78,40 +77,64 @@ async def click_search(page):
         "button:has-text('Search')",
         "button:has-text('Submit')"
     ]
-
     for sel in candidates:
         if await page.locator(sel).count():
-            await page.click(sel)
+            await page.locator(sel).first.click()
             return
-
     await page.keyboard.press("Enter")
+
+
+async def wait_for_results_or_no_results(page):
+    candidates = [
+        "table",
+        "text=No records",
+        "text=No results",
+        "text=0 results",
+        "#MainContent_UpdatePanel1",
+        "body"
+    ]
+
+    for selector in candidates:
+        try:
+            await page.locator(selector).first.wait_for(timeout=5000)
+            return
+        except PlaywrightTimeoutError:
+            continue
 
 
 async def scrape_current_page_rows(page, program: str, state_label: str) -> List[dict]:
     rows = []
     tables = page.locator("table")
+    table_count = await tables.count()
 
-    for i in range(await tables.count()):
+    for i in range(table_count):
         table = tables.nth(i)
 
-        if await table.locator("th").count() == 0:
+        try:
+            trs = await table.locator("tr").all()
+        except Exception:
             continue
 
-        trs = await table.locator("tr").all()
         if len(trs) < 2:
             continue
 
+        parsed_any = False
+
         for tr in trs[1:]:
-            tds = await tr.locator("td").all_inner_texts()
+            tds = [td.strip() for td in await tr.locator("td").all_inner_texts()]
+
             if len(tds) < 3:
                 continue
 
-            name = tds[0].strip()
-            addr1 = tds[1].strip()
-            csz = tds[2].strip()
-            phone = tds[3].strip() if len(tds) > 3 else ""
+            name = tds[0]
+            addr1 = tds[1]
+            csz = tds[2]
+            phone = tds[3] if len(tds) > 3 else ""
 
             city, st, zipc = split_city_state_zip(csz)
+
+            if not name or not addr1:
+                continue
 
             rows.append({
                 "organization": name,
@@ -124,11 +147,21 @@ async def scrape_current_page_rows(page, program: str, state_label: str) -> List
                 "source_url": AMS_URL,
                 "last_seen": datetime.utcnow().isoformat()
             })
+            parsed_any = True
 
-        if rows:
+        if parsed_any:
             break
 
     return rows
+
+
+async def save_debug_artifacts(page, label: str):
+    os.makedirs("debug", exist_ok=True)
+    safe_label = re.sub(r"[^a-zA-Z0-9_-]", "_", label)
+    await page.screenshot(path=f"debug/{safe_label}.png", full_page=True)
+    html = await page.content()
+    with open(f"debug/{safe_label}.html", "w", encoding="utf-8") as f:
+        f.write(html)
 
 
 def deduplicate_rows(rows: List[dict]) -> List[dict]:
@@ -152,11 +185,12 @@ def deduplicate_rows(rows: List[dict]) -> List[dict]:
 
 async def run_scrape() -> List[dict]:
     all_rows = []
+    zero_result_checks = 0
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(
-            user_agent="AHHD-directory-research/1.0 (+https://accreditedhomehealthcare.directory)"
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122 Safari/537.36"
         )
         page = await context.new_page()
 
@@ -164,29 +198,43 @@ async def run_scrape() -> List[dict]:
             for state_label in STATES:
                 if LIMIT_LOCATIONS > 0 and len(all_rows) >= LIMIT_LOCATIONS:
                     print(f"Reached limit of {LIMIT_LOCATIONS} locations. Stopping.")
+                    all_rows = all_rows[:LIMIT_LOCATIONS]
                     break
 
                 print(f"Fetching: {program} / {state_label}")
 
                 await page.goto(AMS_URL, timeout=90000)
+                await page.wait_for_load_state("domcontentloaded")
 
                 prog_select = await find_select_with_programs(page)
                 state_select = await find_select_with_states(page)
 
                 if prog_select is None or state_select is None:
-                    print("Could not locate dropdowns. Skipping.")
+                    print("Could not locate dropdowns. Saving debug artifact.")
+                    await save_debug_artifacts(page, f"missing_dropdowns_{program}_{state_label}")
                     continue
 
                 await prog_select.select_option(label=program)
                 await state_select.select_option(label=state_label)
+                await polite_pause(0.6, 1.0)
+
                 await click_search(page)
-                await page.wait_for_load_state("networkidle")
-                await polite_pause(2.5, 4.0)
+                await wait_for_results_or_no_results(page)
+                await polite_pause()
 
-                while True:
-                    page_rows = await scrape_current_page_rows(page, program, state_label)
-                    all_rows.extend(page_rows)
+                page_rows = await scrape_current_page_rows(page, program, state_label)
+                print(f"  Found {len(page_rows)} rows on first page")
 
+                if not page_rows:
+                    zero_result_checks += 1
+                    if zero_result_checks <= 3:
+                        await save_debug_artifacts(page, f"no_rows_{program}_{state_label}")
+                else:
+                    zero_result_checks = 0
+
+                all_rows.extend(page_rows)
+
+                while page_rows:
                     if LIMIT_LOCATIONS > 0 and len(all_rows) >= LIMIT_LOCATIONS:
                         all_rows = all_rows[:LIMIT_LOCATIONS]
                         break
@@ -196,10 +244,18 @@ async def run_scrape() -> List[dict]:
                         break
 
                     await next_link.first.click()
-                    await page.wait_for_load_state("networkidle")
-                    await polite_pause(2.0, 3.5)
+                    await wait_for_results_or_no_results(page)
+                    await polite_pause(1.0, 1.8)
 
-                await polite_pause(3.0, 4.5)
+                    page_rows = await scrape_current_page_rows(page, program, state_label)
+                    print(f"  Found {len(page_rows)} rows on next page")
+
+                    if not page_rows:
+                        break
+
+                    all_rows.extend(page_rows)
+
+                await polite_pause(1.0, 1.8)
 
             if LIMIT_LOCATIONS > 0 and len(all_rows) >= LIMIT_LOCATIONS:
                 break
@@ -219,7 +275,8 @@ async def write_to_google_sheets(rows: List[dict]):
         async with session.post(
             GOOGLE_SHEETS_URL,
             json=payload,
-            headers={"Content-Type": "application/json"}
+            headers={"Content-Type": "application/json"},
+            timeout=aiohttp.ClientTimeout(total=120)
         ) as response:
             text = await response.text()
             print(f"Google Sheets response status: {response.status}")
@@ -242,6 +299,7 @@ async def main():
 
     print("Geocoding locations...")
     geocoded_rows = await geocode_locations(unique_rows)
+
     geocoded_count = sum(1 for r in geocoded_rows if r.get("latitude") is not None)
     print(f"Geocoded {geocoded_count}/{len(geocoded_rows)} locations")
 
