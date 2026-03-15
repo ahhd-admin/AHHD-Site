@@ -10,7 +10,6 @@ async def main():
     try:
         await scraper_main()
         print("\nData successfully written to Google Sheets!")
-
     except Exception as e:
         print(f"\nERROR: {e}")
         sys.exit(1)
