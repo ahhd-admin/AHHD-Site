@@ -1,4 +1,3 @@
-ogle-sheets-script.js
 function doGet(e) {
   return ContentService
     .createTextOutput(JSON.stringify({
@@ -12,8 +11,19 @@ function doPost(e) {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
 
-    const rawSheetName = "Raw_ACHC";
-    const mergedSheetName = "Merged_Locations";
+    if (!e || !e.postData || !e.postData.contents) {
+      return jsonResponse_({
+        ok: false,
+        error: "No POST body received"
+      });
+    }
+
+    const payload = JSON.parse(e.postData.contents);
+    const action = payload.action || "replace_all";
+    const testMode = payload.test_mode === true;
+
+    const rawSheetName = testMode ? "Raw_ACHC_Test" : "Raw_ACHC";
+    const mergedSheetName = testMode ? "Merged_Locations_Test" : "Merged_Locations";
 
     let rawSheet = ss.getSheetByName(rawSheetName);
     let mergedSheet = ss.getSheetByName(mergedSheetName);
@@ -75,15 +85,6 @@ function doPost(e) {
     ensureHeaders_(rawSheet, rawHeaders);
     ensureHeaders_(mergedSheet, mergedHeaders);
 
-    if (!e || !e.postData || !e.postData.contents) {
-      return jsonResponse_({
-        ok: false,
-        error: "No POST body received"
-      });
-    }
-
-    const payload = JSON.parse(e.postData.contents);
-    const action = payload.action || "replace_all";
     const rawRows = Array.isArray(payload.raw_rows) ? payload.raw_rows : [];
     const mergedRows = Array.isArray(payload.merged_rows) ? payload.merged_rows : [];
 
@@ -104,6 +105,7 @@ function doPost(e) {
       return jsonResponse_({
         ok: true,
         action: "replace_all",
+        test_mode: testMode,
         raw_rows_received: rawRows.length,
         merged_rows_received: mergedRows.length,
         raw_sheet_name: rawSheetName,
