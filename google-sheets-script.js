@@ -1,3 +1,4 @@
+ogle-sheets-script.js
 function doGet(e) {
   return ContentService
     .createTextOutput(JSON.stringify({
@@ -17,13 +18,8 @@ function doPost(e) {
     let rawSheet = ss.getSheetByName(rawSheetName);
     let mergedSheet = ss.getSheetByName(mergedSheetName);
 
-    if (!rawSheet) {
-      rawSheet = ss.insertSheet(rawSheetName);
-    }
-
-    if (!mergedSheet) {
-      mergedSheet = ss.insertSheet(mergedSheetName);
-    }
+    if (!rawSheet) rawSheet = ss.insertSheet(rawSheetName);
+    if (!mergedSheet) mergedSheet = ss.insertSheet(mergedSheetName);
 
     const rawHeaders = [
       "location_key",
@@ -33,7 +29,9 @@ function doPost(e) {
       "searched_program_type",
       "accreditation_program",
       "services",
-      "address",
+      "address_raw",
+      "address_line_1",
+      "address_line_2",
       "city",
       "state",
       "state_abbr",
@@ -56,7 +54,9 @@ function doPost(e) {
       "program_types",
       "accreditation_programs",
       "services",
-      "address",
+      "address_raw_variants",
+      "address_line_1",
+      "address_line_2",
       "city",
       "state",
       "state_abbr",
