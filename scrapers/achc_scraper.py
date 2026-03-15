@@ -15,7 +15,7 @@ AMS_URL = "https://ams.achc.org/accredited_organizations.aspx"
 
 # Fast debug mode
 PROGRAMS = ["Home Health"]
-SEARCH_STATES = ["Illinois"]
+SEARCH_STATES = ["Wyoming"]
 
 LIMIT_LOCATIONS = int(os.getenv("LIMIT_LOCATIONS", "25"))
 
