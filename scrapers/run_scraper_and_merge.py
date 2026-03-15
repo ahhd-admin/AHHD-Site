@@ -4,7 +4,7 @@ from achc_scraper import main as scraper_main
 
 async def main():
     print("=" * 60)
-    print("ACHC Scraper - Raw + Merged Pipeline")
+    print("ACHC Scraper - Raw Dump Test")
     print("=" * 60)
 
     try:
