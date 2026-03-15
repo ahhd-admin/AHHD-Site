@@ -1,0 +1,35 @@
+name: Test ACHC Scraper to Test Tabs
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        working-directory: ./scrapers
+        run: |
+          pip install -r requirements.txt
+          playwright install chromium
+
+      - name: Run one-state ACHC test and push to test tabs
+        working-directory: ./scrapers
+        env:
+          GOOGLE_SHEETS_WEB_APP_URL: ${{ secrets.GOOGLE_SHEETS_WEB_APP_URL }}
+          LIMIT_LOCATIONS: 25
+          TEST_MODE: true
+          TEST_PROGRAMS: Home Health
+          TEST_STATES: Texas
+        run: |
+          python run_scraper_and_merge.py
