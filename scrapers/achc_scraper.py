@@ -428,6 +428,9 @@ async def main():
     for row in unique_rows[:5]:
         print(row)
 
+    for row in unique_rows[:5]:
+        print(row["organization"], "-", row["city"], row["state"])
+
     print("Test scrape completed successfully")
 
 
