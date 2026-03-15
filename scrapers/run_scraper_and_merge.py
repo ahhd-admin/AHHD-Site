@@ -4,7 +4,7 @@ from achc_scraper import main as scraper_main
 
 async def main():
     print("=" * 60)
-    print("ACHC Scraper - Google Sheets Version")
+    print("ACHC Scraper - Fast Pull Version")
     print("=" * 60)
 
     try:
