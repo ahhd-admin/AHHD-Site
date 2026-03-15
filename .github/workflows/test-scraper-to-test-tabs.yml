@@ -29,7 +29,7 @@ jobs:
           GOOGLE_SHEETS_WEB_APP_URL: ${{ secrets.GOOGLE_SHEETS_WEB_APP_URL }}
           LIMIT_LOCATIONS: 25
           TEST_MODE: true
-          TEST_PROGRAMS: Home Health
-          TEST_STATES: Texas
+          TEST_PROGRAMS: Home Health,Hospice,Home Care
+          TRIGGER_STATE: Texas
         run: |
           python run_scraper_and_merge.py
