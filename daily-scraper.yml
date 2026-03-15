@@ -2,7 +2,7 @@ name: Daily Healthcare Provider Scraper
 
 on:
   schedule:
-    - cron: '58 7 * * *'
+    - cron: '02 8 * * *'
   workflow_dispatch:
 
 jobs:
