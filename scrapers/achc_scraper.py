@@ -290,49 +290,29 @@ async def click_search(page):
 
 
 async def wait_for_results(page):
-    await page.wait_for_timeout(1400)
-
-
-async def expand_details_if_needed(row_locator, index: int):
-    toggle_link = row_locator.locator("a:has-text('Show/Hide Accreditation Details'):visible").first
-    if await toggle_link.count() == 0:
-        return
-    try:
-        await toggle_link.click()
-        await asyncio.sleep(0.18)
-    except Exception as e:
-        print(f"    Warning: could not expand details for row {index + 1}: {e}")
-
-
-async def click_next_if_available(page) -> bool:
-    next_link = page.locator("a:has-text('Next'):visible, a[title*='Next']:visible").first
-    if await next_link.count() == 0:
-        return False
-
-    try:
-        await next_link.click()
-        await wait_for_results(page)
-        return True
-    except Exception:
-        return False
+    await page.wait_for_timeout(1800)
 
 
 async def scrape_current_page_rows(page, searched_program: str, searched_state_label: str) -> List[dict]:
+    """
+    TEST PATH: intentionally broad DOM extraction from all detail links on the page.
+    This is not the final production-scoped parser.
+    """
     rows = []
 
-    result_rows = page.locator("tr:visible").filter(
-        has=page.locator("a:has-text('Show/Hide Accreditation Details'):visible")
-    )
+    detail_links = page.locator("a:has-text('Show/Hide Accreditation Details')")
+    link_count = await detail_links.count()
+    print(f"  Detail links found in DOM: {link_count}")
 
-    row_count = await result_rows.count()
-    print(f"  Visible result rows found: {row_count}")
+    for i in range(link_count):
+        link = detail_links.nth(i)
+        container = link.locator("xpath=ancestor::tr[1]")
 
-    for i in range(row_count):
-        row = result_rows.nth(i)
+        try:
+            text = await container.inner_text()
+        except Exception:
+            continue
 
-        await expand_details_if_needed(row, i)
-
-        text = await row.inner_text()
         lines = [line.strip() for line in text.split("\n") if line.strip()]
         lines = [line for line in lines if "Show/Hide Accreditation Details" not in line]
 
@@ -397,6 +377,9 @@ async def scrape_current_page_rows(page, searched_program: str, searched_state_l
             "source_url": AMS_URL,
             "last_seen": datetime.utcnow().isoformat()
         })
+
+        if LIMIT_LOCATIONS > 0 and len(rows) >= LIMIT_LOCATIONS:
+            break
 
     return rows
 
@@ -535,22 +518,8 @@ async def scrape_program_state(page, program: str, state_label: str) -> List[dic
     await wait_for_results(page)
     print(f"  search + wait took {time.time() - start:.2f}s")
 
-    all_rows = []
-
-    while True:
-        page_rows = await scrape_current_page_rows(page, program, state_label)
-        print(f"  Found {len(page_rows)} rows on current page")
-        all_rows.extend(page_rows)
-
-        if LIMIT_LOCATIONS > 0 and len(all_rows) >= LIMIT_LOCATIONS:
-            all_rows = all_rows[:LIMIT_LOCATIONS]
-            break
-
-        moved = await click_next_if_available(page)
-        if not moved:
-            break
-
-        await polite_pause()
+    all_rows = await scrape_current_page_rows(page, program, state_label)
+    print(f"  Found {len(all_rows)} rows from broad DOM extraction")
 
     return all_rows
 
@@ -566,27 +535,19 @@ async def run_scrape() -> List[dict]:
         context = await browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122 Safari/537.36"
         )
+        page = await context.new_page()
 
-        async def worker(program_state_pairs: List[Tuple[str, str]]) -> List[dict]:
-            local_rows = []
-            page = await context.new_page()
-            try:
-                for program, state_label in program_state_pairs:
-                    rows = await scrape_program_state(page, program, state_label)
-                    local_rows.extend(rows)
-            finally:
-                await page.close()
-            return local_rows
+        for program in PROGRAMS:
+            for state_label in SEARCH_STATES:
+                rows = await scrape_program_state(page, program, state_label)
+                all_rows.extend(rows)
 
-        pairs = [(program, state) for program in PROGRAMS for state in SEARCH_STATES]
-        chunk_size = 8
-        chunks = [pairs[i:i + chunk_size] for i in range(0, len(pairs), chunk_size)]
+                if LIMIT_LOCATIONS > 0 and len(all_rows) >= LIMIT_LOCATIONS:
+                    all_rows = all_rows[:LIMIT_LOCATIONS]
+                    break
 
-        tasks = [worker(chunk) for chunk in chunks[:4]]
-        results = await asyncio.gather(*tasks)
-
-        for result in results:
-            all_rows.extend(result)
+            if LIMIT_LOCATIONS > 0 and len(all_rows) >= LIMIT_LOCATIONS:
+                break
 
         await browser.close()
 
