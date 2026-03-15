@@ -14,9 +14,8 @@ load_dotenv()
 
 AMS_URL = "https://ams.achc.org/accredited_organizations.aspx"
 
-PROGRAMS = ["Home Care", "Home Health", "Hospice"]
-
-SEARCH_STATES = [
+DEFAULT_PROGRAMS = ["Home Care", "Home Health", "Hospice"]
+DEFAULT_STATES = [
     "Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado", "Connecticut", "Delaware",
     "District of Columbia", "Florida", "Georgia", "Hawaii", "Idaho", "Illinois", "Indiana", "Iowa",
     "Kansas", "Kentucky", "Louisiana", "Maine", "Maryland", "Massachusetts", "Michigan", "Minnesota",
@@ -28,6 +27,13 @@ SEARCH_STATES = [
 
 LIMIT_LOCATIONS = int(os.getenv("LIMIT_LOCATIONS", "0"))
 GOOGLE_SHEETS_URL = os.getenv("GOOGLE_SHEETS_WEB_APP_URL")
+TEST_MODE = os.getenv("TEST_MODE", "false").lower() == "true"
+
+TEST_PROGRAMS_ENV = os.getenv("TEST_PROGRAMS", "").strip()
+TEST_STATES_ENV = os.getenv("TEST_STATES", "").strip()
+
+PROGRAMS = [p.strip() for p in TEST_PROGRAMS_ENV.split(",") if p.strip()] if TEST_PROGRAMS_ENV else DEFAULT_PROGRAMS
+SEARCH_STATES = [s.strip() for s in TEST_STATES_ENV.split(",") if s.strip()] if TEST_STATES_ENV else DEFAULT_STATES
 
 if not GOOGLE_SHEETS_URL:
     raise ValueError("Missing GOOGLE_SHEETS_WEB_APP_URL in environment variables")
@@ -73,11 +79,9 @@ def normalize_text(value: str) -> str:
 def split_city_state_zip(text: str) -> Tuple[str, str, str]:
     if not text:
         return "", "", ""
-
     match = re.match(r"^(.*?),\s*([A-Z]{2})\s+(\d{5}(?:-\d{4})?)$", text.strip())
     if not match:
         return "", "", ""
-
     return match.group(1), match.group(2), match.group(3)
 
 
@@ -534,13 +538,6 @@ async def scrape_program_state(page, program: str, state_label: str) -> List[dic
     all_rows = []
 
     while True:
-        try:
-            summary_text = await page.locator("text=/Displaying\\s+\\d+\\s+Accredited Organizations/i").first.text_content()
-            if summary_text:
-                print(f"  Summary text: {summary_text.strip()}")
-        except Exception:
-            pass
-
         page_rows = await scrape_current_page_rows(page, program, state_label)
         print(f"  Found {len(page_rows)} rows on current page")
         all_rows.extend(page_rows)
@@ -577,19 +574,15 @@ async def run_scrape() -> List[dict]:
                 for program, state_label in program_state_pairs:
                     rows = await scrape_program_state(page, program, state_label)
                     local_rows.extend(rows)
-                    if LIMIT_LOCATIONS > 0 and len(local_rows) >= LIMIT_LOCATIONS:
-                        local_rows = local_rows[:LIMIT_LOCATIONS]
-                        break
             finally:
                 await page.close()
             return local_rows
 
-        # Parallelize by state chunks to reduce runtime
         pairs = [(program, state) for program in PROGRAMS for state in SEARCH_STATES]
         chunk_size = 8
         chunks = [pairs[i:i + chunk_size] for i in range(0, len(pairs), chunk_size)]
 
-        tasks = [worker(chunk) for chunk in chunks[:4]]  # modest concurrency
+        tasks = [worker(chunk) for chunk in chunks[:4]]
         results = await asyncio.gather(*tasks)
 
         for result in results:
@@ -603,6 +596,7 @@ async def run_scrape() -> List[dict]:
 async def write_to_google_sheets(raw_rows: List[dict], merged_rows: List[dict]):
     payload = {
         "action": "replace_all",
+        "test_mode": TEST_MODE,
         "raw_rows": raw_rows,
         "merged_rows": merged_rows
     }
@@ -623,6 +617,10 @@ async def write_to_google_sheets(raw_rows: List[dict], merged_rows: List[dict]):
 
 async def main():
     print("Starting ACHC scraper...")
+    print(f"TEST_MODE: {TEST_MODE}")
+    print(f"PROGRAMS: {PROGRAMS}")
+    print(f"SEARCH_STATES: {SEARCH_STATES}")
+
     raw_rows = await run_scrape()
 
     if not raw_rows:
