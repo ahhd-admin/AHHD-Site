@@ -3,7 +3,7 @@ import os
 import random
 import re
 from datetime import datetime
-from typing import List
+from typing import List, Tuple
 
 import aiohttp
 from dotenv import load_dotenv
@@ -13,26 +13,34 @@ load_dotenv()
 
 AMS_URL = "https://ams.achc.org/accredited_organizations.aspx"
 
-DEFAULT_PROGRAMS = ["Home Health"]
-DEFAULT_STATES = ["Texas"]
+DEFAULT_PROGRAMS = ["Home Care", "Home Health", "Hospice"]
+DEFAULT_TRIGGER_STATE = "Texas"
 
 LIMIT_LOCATIONS = int(os.getenv("LIMIT_LOCATIONS", "25"))
 GOOGLE_SHEETS_URL = os.getenv("GOOGLE_SHEETS_WEB_APP_URL")
 TEST_MODE = os.getenv("TEST_MODE", "false").lower() == "true"
 
 TEST_PROGRAMS_ENV = os.getenv("TEST_PROGRAMS", "").strip()
-TEST_STATES_ENV = os.getenv("TEST_STATES", "").strip()
-NO_STATE_FILTER = os.getenv("NO_STATE_FILTER", "false").lower() == "true"
+TRIGGER_STATE = os.getenv("TRIGGER_STATE", DEFAULT_TRIGGER_STATE).strip()
 
 PROGRAMS = [p.strip() for p in TEST_PROGRAMS_ENV.split(",") if p.strip()] if TEST_PROGRAMS_ENV else DEFAULT_PROGRAMS
 
-if NO_STATE_FILTER:
-    SEARCH_STATES = [None]
-else:
-    SEARCH_STATES = [s.strip() for s in TEST_STATES_ENV.split(",") if s.strip()] if TEST_STATES_ENV else DEFAULT_STATES
-
 if not GOOGLE_SHEETS_URL:
     raise ValueError("Missing GOOGLE_SHEETS_WEB_APP_URL in environment variables")
+
+STATE_ABBR_MAP = {
+    "Alabama": "AL", "Alaska": "AK", "Arizona": "AZ", "Arkansas": "AR", "California": "CA",
+    "Colorado": "CO", "Connecticut": "CT", "Delaware": "DE", "District of Columbia": "DC",
+    "Florida": "FL", "Georgia": "GA", "Hawaii": "HI", "Idaho": "ID", "Illinois": "IL",
+    "Indiana": "IN", "Iowa": "IA", "Kansas": "KS", "Kentucky": "KY", "Louisiana": "LA",
+    "Maine": "ME", "Maryland": "MD", "Massachusetts": "MA", "Michigan": "MI", "Minnesota": "MN",
+    "Mississippi": "MS", "Missouri": "MO", "Montana": "MT", "Nebraska": "NE", "Nevada": "NV",
+    "New Hampshire": "NH", "New Jersey": "NJ", "New Mexico": "NM", "New York": "NY",
+    "North Carolina": "NC", "North Dakota": "ND", "Ohio": "OH", "Oklahoma": "OK", "Oregon": "OR",
+    "Pennsylvania": "PA", "Rhode Island": "RI", "South Carolina": "SC", "South Dakota": "SD",
+    "Tennessee": "TN", "Texas": "TX", "Utah": "UT", "Vermont": "VT", "Virginia": "VA",
+    "Washington": "WA", "West Virginia": "WV", "Wisconsin": "WI", "Wyoming": "WY"
+}
 
 COUNTRY_PREFERRED_LABELS = [
     "USA",
@@ -52,6 +60,44 @@ def normalize_text(value: str) -> str:
     return re.sub(r"\s+", " ", value.strip().lower())
 
 
+def split_city_state_zip(text: str) -> Tuple[str, str, str]:
+    if not text:
+        return "", "", ""
+    match = re.match(r"^(.*?),\s*([A-Z]{2})\s+(\d{5}(?:-\d{4})?)$", text.strip())
+    if not match:
+        return "", "", ""
+    return match.group(1), match.group(2), match.group(3)
+
+
+def parse_raw_block(raw_text: str) -> Tuple[str, str, str]:
+    """
+    Returns:
+    - raw_name_line
+    - raw_address_block
+    - parsed_state_abbr
+    """
+    lines = [line.strip() for line in raw_text.split("\n") if line.strip()]
+    lines = [line for line in lines if "Show/Hide Accreditation Details" not in line]
+
+    if not lines:
+        return "", "", ""
+
+    raw_name_line = lines[0]
+    city_state_zip = ""
+    address_lines = []
+
+    for line in lines[1:]:
+        if re.search(r",\s*[A-Z]{2}\s+\d{5}(?:-\d{4})?$", line):
+            city_state_zip = line
+            break
+        address_lines.append(line)
+
+    raw_address_block = " | ".join(address_lines)
+    _, parsed_state_abbr, _ = split_city_state_zip(city_state_zip)
+
+    return raw_name_line, raw_address_block, parsed_state_abbr
+
+
 async def find_select_with_programs(page):
     selects = page.locator("select")
     for i in range(await selects.count()):
@@ -63,9 +109,7 @@ async def find_select_with_programs(page):
 
 
 async def find_select_with_states(page):
-    state_markers = {
-        "Illinois", "California", "Texas", "Florida", "New York", "District of Columbia"
-    }
+    state_markers = {"Illinois", "California", "Texas", "Florida", "New York", "District of Columbia"}
     selects = page.locator("select")
     for i in range(await selects.count()):
         sel = selects.nth(i)
@@ -129,16 +173,14 @@ async def wait_for_results(page):
     await page.wait_for_timeout(1800)
 
 
-async def scrape_raw_rows(page, searched_program: str, searched_state_label: str) -> List[dict]:
-    """
-    Raw-only extraction.
-    Finds all detail links in the DOM and stores the surrounding text block as raw text.
-    """
+async def scrape_raw_rows(page, searched_program: str, trigger_state: str) -> List[dict]:
     rows = []
 
     detail_links = page.locator("a:has-text('Show/Hide Accreditation Details')")
     link_count = await detail_links.count()
     print(f"  Detail links found in DOM: {link_count}")
+
+    trigger_state_abbr = STATE_ABBR_MAP.get(trigger_state, "")
 
     for i in range(link_count):
         link = detail_links.nth(i)
@@ -164,11 +206,19 @@ async def scrape_raw_rows(page, searched_program: str, searched_state_label: str
         if not raw_text:
             continue
 
+        raw_name_line, raw_address_block, parsed_state_abbr = parse_raw_block(raw_text)
+        matches_trigger_state = parsed_state_abbr == trigger_state_abbr if parsed_state_abbr and trigger_state_abbr else False
+
         rows.append({
             "raw_index": i + 1,
             "container_type": container_type,
             "searched_program_type": searched_program,
-            "searched_state": searched_state_label,
+            "search_trigger_state": trigger_state,
+            "result_scope": f"Multi-state raw ACHC pull; trigger state = {trigger_state}",
+            "raw_name_line": raw_name_line,
+            "raw_address_block": raw_address_block,
+            "parsed_state_abbr": parsed_state_abbr,
+            "matches_trigger_state": matches_trigger_state,
             "raw_text": raw_text,
             "source_url": AMS_URL,
             "last_seen": datetime.utcnow().isoformat()
@@ -180,9 +230,8 @@ async def scrape_raw_rows(page, searched_program: str, searched_state_label: str
     return rows
 
 
-async def scrape_program_state(page, program: str, state_label: str) -> List[dict]:
-    state_log = state_label if state_label else "NO STATE FILTER"
-    print(f"Fetching: {program} / {state_log}")
+async def scrape_program(page, program: str, trigger_state: str) -> List[dict]:
+    print(f"Fetching: {program} / trigger state {trigger_state}")
 
     await page.goto(AMS_URL, timeout=60000)
     await page.wait_for_load_state("domcontentloaded")
@@ -198,19 +247,14 @@ async def scrape_program_state(page, program: str, state_label: str) -> List[dic
     print(f"  Selected country option: {country_label}")
 
     await prog_select.select_option(label=program)
-    
-    if state_label:
-        await state_select.select_option(label=state_label)
-        print(f"  Selected state: {state_label}")
-    else:
-        print("  No state filter selected")
-    
+    await state_select.select_option(label=trigger_state)
+    print(f"  Selected trigger state: {trigger_state}")
     await polite_pause()
 
     await click_search(page)
     await wait_for_results(page)
 
-    rows = await scrape_raw_rows(page, program, state_label)
+    rows = await scrape_raw_rows(page, program, trigger_state)
     print(f"  Found {len(rows)} raw rows")
 
     return rows
@@ -230,15 +274,11 @@ async def run_scrape() -> List[dict]:
         page = await context.new_page()
 
         for program in PROGRAMS:
-            for state_label in SEARCH_STATES:
-                rows = await scrape_program_state(page, program, state_label)
-                all_rows.extend(rows)
-
-                if LIMIT_LOCATIONS > 0 and len(all_rows) >= LIMIT_LOCATIONS:
-                    all_rows = all_rows[:LIMIT_LOCATIONS]
-                    break
+            rows = await scrape_program(page, program, TRIGGER_STATE)
+            all_rows.extend(rows)
 
             if LIMIT_LOCATIONS > 0 and len(all_rows) >= LIMIT_LOCATIONS:
+                all_rows = all_rows[:LIMIT_LOCATIONS]
                 break
 
         await browser.close()
@@ -271,7 +311,7 @@ async def main():
     print("Starting ACHC raw dump...")
     print(f"TEST_MODE: {TEST_MODE}")
     print(f"PROGRAMS: {PROGRAMS}")
-    print(f"SEARCH_STATES: {SEARCH_STATES}")
+    print(f"TRIGGER_STATE: {TRIGGER_STATE}")
 
     raw_rows = await run_scrape()
 
@@ -284,9 +324,10 @@ async def main():
         print({
             "raw_index": row["raw_index"],
             "searched_program_type": row["searched_program_type"],
-            "searched_state": row["searched_state"],
-            "container_type": row["container_type"],
-            "raw_text_preview": row["raw_text"][:200]
+            "search_trigger_state": row["search_trigger_state"],
+            "parsed_state_abbr": row["parsed_state_abbr"],
+            "matches_trigger_state": row["matches_trigger_state"],
+            "raw_name_line": row["raw_name_line"]
         })
 
     await write_to_google_sheets(raw_rows)
