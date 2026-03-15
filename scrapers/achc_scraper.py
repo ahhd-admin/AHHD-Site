@@ -3,9 +3,11 @@ import os
 import random
 import re
 import time
+from collections import defaultdict
 from datetime import datetime
-from typing import List, Tuple
+from typing import List, Tuple, Dict, Any
 
+import aiohttp
 from dotenv import load_dotenv
 from playwright.async_api import async_playwright
 
@@ -13,11 +15,24 @@ load_dotenv()
 
 AMS_URL = "https://ams.achc.org/accredited_organizations.aspx"
 
-# Fast debug mode
-PROGRAMS = ["Home Health"]
-SEARCH_STATES = ["Texas"]
+# Production targets
+PROGRAMS = ["Home Care", "Home Health", "Hospice"]
 
-LIMIT_LOCATIONS = int(os.getenv("LIMIT_LOCATIONS", "25"))
+SEARCH_STATES = [
+    "Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado", "Connecticut", "Delaware",
+    "District of Columbia", "Florida", "Georgia", "Hawaii", "Idaho", "Illinois", "Indiana", "Iowa",
+    "Kansas", "Kentucky", "Louisiana", "Maine", "Maryland", "Massachusetts", "Michigan", "Minnesota",
+    "Mississippi", "Missouri", "Montana", "Nebraska", "Nevada", "New Hampshire", "New Jersey",
+    "New Mexico", "New York", "North Carolina", "North Dakota", "Ohio", "Oklahoma", "Oregon",
+    "Pennsylvania", "Rhode Island", "South Carolina", "South Dakota", "Tennessee", "Texas", "Utah",
+    "Vermont", "Virginia", "Washington", "West Virginia", "Wisconsin", "Wyoming"
+]
+
+LIMIT_LOCATIONS = int(os.getenv("LIMIT_LOCATIONS", "0"))
+GOOGLE_SHEETS_URL = os.getenv("GOOGLE_SHEETS_WEB_APP_URL")
+
+if not GOOGLE_SHEETS_URL:
+    raise ValueError("Missing GOOGLE_SHEETS_WEB_APP_URL in environment variables")
 
 STATE_DISPLAY_MAP = {
     "District of Columbia": "Washington, D.C.",
@@ -91,7 +106,7 @@ COUNTRY_PREFERRED_LABELS = [
 ]
 
 
-async def polite_pause(min_seconds: float = 0.08, max_seconds: float = 0.2):
+async def polite_pause(min_seconds: float = 0.15, max_seconds: float = 0.35):
     await asyncio.sleep(random.uniform(min_seconds, max_seconds))
 
 
@@ -115,15 +130,46 @@ def normalize_state_display(search_label: str, scraped_state_abbr: str = "") -> 
         for state_name, abbr in STATE_ABBR_MAP.items():
             if abbr == scraped_state_abbr:
                 return STATE_DISPLAY_MAP.get(state_name, state_name)
-
     return STATE_DISPLAY_MAP.get(search_label, search_label)
 
 
 def normalize_state_abbr(search_label: str, scraped_state_abbr: str = "") -> str:
     if scraped_state_abbr:
         return scraped_state_abbr
-
     return STATE_ABBR_MAP.get(search_label, "")
+
+
+def clean_program_label(program_text: str) -> str:
+    if not program_text:
+        return ""
+    return program_text.replace("(Deemed)", "").strip()
+
+
+def normalize_service_list(services_text: str) -> List[str]:
+    if not services_text:
+        return []
+    return [s.strip() for s in services_text.split(",") if s.strip()]
+
+
+def parse_dba_and_address_lines(lines: List[str]) -> Tuple[str, str, str]:
+    """
+    Returns: legal_name, dba_name, joined_address
+    """
+    if not lines:
+        return "", "", ""
+
+    legal_name = lines[0]
+    dba_name = ""
+    address_lines = []
+
+    for line in lines[1:]:
+        if re.match(r"^d/b/a\s+", line, flags=re.IGNORECASE):
+            dba_name = re.sub(r"^d/b/a\s+", "", line, flags=re.IGNORECASE).strip()
+        else:
+            address_lines.append(line)
+
+    joined_address = ", ".join(address_lines)
+    return legal_name, dba_name, joined_address
 
 
 def parse_details_text(details_text: str) -> dict:
@@ -144,7 +190,7 @@ def parse_details_text(details_text: str) -> dict:
 
     program_match = re.search(r"Program:\s*(.+?)(?:Services:|$)", cleaned, re.IGNORECASE)
     if program_match:
-        result["accreditation_program"] = program_match.group(1).strip()
+        result["accreditation_program"] = clean_program_label(program_match.group(1).strip())
 
     services_match = re.search(r"Services:\s*(.+)$", cleaned, re.IGNORECASE)
     if services_match:
@@ -153,16 +199,22 @@ def parse_details_text(details_text: str) -> dict:
     return result
 
 
+def build_location_key(address: str, city: str, state_abbr: str, zip_code: str) -> str:
+    return "|".join([
+        normalize_text(address),
+        normalize_text(city),
+        state_abbr.strip().upper(),
+        zip_code.strip()
+    ])
+
+
 async def find_select_with_programs(page):
     selects = page.locator("select")
-
     for i in range(await selects.count()):
         sel = selects.nth(i)
         opts = [t.strip() for t in await sel.locator("option").all_inner_texts()]
-
         if "Home Care" in opts and "Home Health" in opts and "Hospice" in opts:
             return sel
-
     return None
 
 
@@ -177,15 +229,12 @@ async def find_select_with_states(page):
     }
 
     selects = page.locator("select")
-
     for i in range(await selects.count()):
         sel = selects.nth(i)
         opts = [t.strip() for t in await sel.locator("option").all_inner_texts()]
         hits = sum(1 for o in opts if o in state_markers)
-
         if hits >= 4:
             return sel
-
     return None
 
 
@@ -231,106 +280,102 @@ async def click_search(page):
         "button:has-text('Find')",
         "button:has-text('Search')"
     ]
-
     for sel in selectors:
         if await page.locator(sel).count():
             await page.locator(sel).first.click()
             return
-
     await page.keyboard.press("Enter")
 
 
 async def wait_for_results(page):
-    await page.wait_for_timeout(1000)
+    await page.wait_for_timeout(1400)
 
 
-async def expand_details_if_needed(container, index: int):
-    toggle_link = container.locator("a:has-text('Show/Hide Accreditation Details')").first
-
+async def expand_details_if_needed(row_locator, index: int):
+    toggle_link = row_locator.locator("a:has-text('Show/Hide Accreditation Details'):visible").first
     if await toggle_link.count() == 0:
         return
-
     try:
         await toggle_link.click()
-        await asyncio.sleep(0.15)
+        await asyncio.sleep(0.18)
     except Exception as e:
-        print(f"    Warning: could not expand details for result {index + 1}: {e}")
+        print(f"    Warning: could not expand details for row {index + 1}: {e}")
 
 
-async def scrape_current_page_rows(page, program: str, state_label: str) -> List[dict]:
+async def scrape_current_page_rows(page, searched_program: str, searched_state_label: str) -> List[dict]:
     rows = []
 
-    detail_links = page.locator("a:has-text('Show/Hide Accreditation Details')")
-    link_count = await detail_links.count()
+    result_rows = page.locator("tr:visible").filter(
+        has=page.locator("a:has-text('Show/Hide Accreditation Details'):visible")
+    )
 
-    print(f"  Detail links found: {link_count}")
+    row_count = await result_rows.count()
+    print(f"  Visible result rows found: {row_count}")
 
-    for i in range(link_count):
-        link = detail_links.nth(i)
-        container = link.locator("xpath=ancestor::tr[1]")
+    for i in range(row_count):
+        row = result_rows.nth(i)
 
-        # Expand inline details first
-        await expand_details_if_needed(container, i)
+        await expand_details_if_needed(row, i)
 
-        text = await container.inner_text()
+        text = await row.inner_text()
         lines = [line.strip() for line in text.split("\n") if line.strip()]
-
-        # Remove toggle link line
         lines = [line for line in lines if "Show/Hide Accreditation Details" not in line]
 
         if len(lines) < 3:
             continue
 
-        # Basic structure:
-        # Company Name
-        # optional d/b/a line
-        # address line(s)
-        # City, ST ZIP
-        # optional Accreditation Details
-        # Dates: ...
-        # Program: ...
-        # Services: ...
-        name = lines[0]
+        details_start = None
+        for idx, line in enumerate(lines):
+            if line.lower().startswith("accreditation details") or line.lower().startswith("dates:"):
+                details_start = idx
+                break
 
-        address_lines = []
+        listing_lines = lines if details_start is None else lines[:details_start]
+        details_lines = [] if details_start is None else lines[details_start:]
+
         city_state_zip = ""
-        details_lines = []
+        listing_before_city = []
 
-        found_city_state_zip = False
-        for line in lines[1:]:
-            if not found_city_state_zip and re.search(r",\s*[A-Z]{2}\s+\d{5}(?:-\d{4})?$", line):
+        for line in listing_lines[1:]:
+            if re.search(r",\s*[A-Z]{2}\s+\d{5}(?:-\d{4})?$", line):
                 city_state_zip = line
-                found_city_state_zip = True
-                continue
+                break
+            listing_before_city.append(line)
 
-            if not found_city_state_zip:
-                address_lines.append(line)
-            else:
-                details_lines.append(line)
-
-        if not city_state_zip or not address_lines:
+        if not city_state_zip:
             continue
 
-        address = ", ".join(address_lines)
+        legal_name, dba_name, address = parse_dba_and_address_lines([listing_lines[0]] + listing_before_city)
+
         city, scraped_state_abbr, zipc = split_city_state_zip(city_state_zip)
+        state_display = normalize_state_display(searched_state_label, scraped_state_abbr)
+        state_abbr = normalize_state_abbr(searched_state_label, scraped_state_abbr)
 
         details_text = " ".join(details_lines)
         details = parse_details_text(details_text)
 
+        accreditation_program = details["accreditation_program"] or searched_program
+        display_name = dba_name if dba_name else legal_name
+        location_key = build_location_key(address, city, state_abbr, zipc)
+
         rows.append({
-            "organization": name,
-            "program": program,
+            "location_key": location_key,
+            "display_name": display_name,
+            "legal_name": legal_name,
+            "dba_name": dba_name,
+            "searched_program_type": searched_program,
+            "accreditation_program": accreditation_program,
+            "services": details["services"],
             "address": address,
             "city": city,
-            "state": normalize_state_display(state_label, scraped_state_abbr),
-            "state_abbr": normalize_state_abbr(state_label, scraped_state_abbr),
+            "state": state_display,
+            "state_abbr": state_abbr,
             "zip": zipc,
             "phone": "",
-            "services": details["services"],
-            "accreditation_program": details["accreditation_program"],
-            "accreditation_dates": details["accreditation_dates"],
+            "website_url": "",
             "latitude": "",
             "longitude": "",
+            "accreditation_dates": details["accreditation_dates"],
             "source_url": AMS_URL,
             "last_seen": datetime.utcnow().isoformat()
         })
@@ -341,24 +386,107 @@ async def scrape_current_page_rows(page, program: str, state_label: str) -> List
     return rows
 
 
-def deduplicate_rows(rows: List[dict]) -> List[dict]:
+def deduplicate_raw_rows(rows: List[dict]) -> List[dict]:
     seen = set()
     unique = []
 
     for row in rows:
         key = (
-            row["organization"].strip().lower(),
-            row["address"].strip().lower(),
-            row["city"].strip().lower(),
-            row["state_abbr"].strip().upper(),
-            row["zip"].strip()
+            row["location_key"],
+            row["searched_program_type"],
+            row["accreditation_program"],
+            row["services"]
         )
-
         if key not in seen:
             seen.add(key)
             unique.append(row)
 
     return unique
+
+
+def build_merged_locations(raw_rows: List[dict]) -> List[dict]:
+    grouped: Dict[str, Dict[str, Any]] = {}
+
+    for row in raw_rows:
+        key = row["location_key"]
+
+        if key not in grouped:
+            grouped[key] = {
+                "location_key": key,
+                "display_name": row["display_name"],
+                "legal_name": row["legal_name"],
+                "dba_names": set(),
+                "name_variants": set(),
+                "program_types": set(),
+                "accreditation_programs": set(),
+                "services": set(),
+                "address": row["address"],
+                "city": row["city"],
+                "state": row["state"],
+                "state_abbr": row["state_abbr"],
+                "zip": row["zip"],
+                "phone": row["phone"],
+                "website_url": row["website_url"],
+                "latitude": row["latitude"],
+                "longitude": row["longitude"],
+                "accreditation_dates": set(),
+                "source_urls": set(),
+                "source_count": 0,
+                "last_seen": row["last_seen"],
+                "enhanced_listing": False
+            }
+
+        g = grouped[key]
+        g["source_count"] += 1
+        g["name_variants"].add(row["legal_name"])
+        g["program_types"].add(row["searched_program_type"])
+        g["accreditation_programs"].add(row["accreditation_program"])
+        g["source_urls"].add(row["source_url"])
+
+        if row["dba_name"]:
+            g["dba_names"].add(row["dba_name"])
+
+        for service in normalize_service_list(row["services"]):
+            g["services"].add(service)
+
+        if row["accreditation_dates"]:
+            g["accreditation_dates"].add(row["accreditation_dates"])
+
+        # Prefer DBA-based display name if available
+        if row["dba_name"] and g["display_name"] == g["legal_name"]:
+            g["display_name"] = row["dba_name"]
+
+        if row["last_seen"] > g["last_seen"]:
+            g["last_seen"] = row["last_seen"]
+
+    merged_rows = []
+    for g in grouped.values():
+        merged_rows.append({
+            "location_key": g["location_key"],
+            "display_name": g["display_name"],
+            "legal_name": g["legal_name"],
+            "dba_names": " | ".join(sorted(g["dba_names"])),
+            "name_variants": " | ".join(sorted(g["name_variants"])),
+            "program_types": " | ".join(sorted(g["program_types"])),
+            "accreditation_programs": " | ".join(sorted(g["accreditation_programs"])),
+            "services": " | ".join(sorted(g["services"])),
+            "address": g["address"],
+            "city": g["city"],
+            "state": g["state"],
+            "state_abbr": g["state_abbr"],
+            "zip": g["zip"],
+            "phone": g["phone"],
+            "website_url": g["website_url"],
+            "latitude": g["latitude"],
+            "longitude": g["longitude"],
+            "accreditation_dates": " | ".join(sorted(g["accreditation_dates"])),
+            "source_urls": " | ".join(sorted(g["source_urls"])),
+            "source_count": g["source_count"],
+            "last_seen": g["last_seen"],
+            "enhanced_listing": g["enhanced_listing"]
+        })
+
+    return merged_rows
 
 
 async def run_scrape() -> List[dict]:
@@ -402,36 +530,75 @@ async def run_scrape() -> List[dict]:
                 await wait_for_results(page)
                 print(f"  search + wait took {time.time() - start:.2f}s")
 
+                try:
+                    summary_text = await page.locator("text=/Displaying\\s+\\d+\\s+Accredited Organizations/i").first.text_content()
+                    if summary_text:
+                        print(f"  Summary text: {summary_text.strip()}")
+                except Exception:
+                    pass
+
                 start = time.time()
                 page_rows = await scrape_current_page_rows(page, program, state_label)
                 print(f"  parse took {time.time() - start:.2f}s")
-                print(f"  Found {len(page_rows)} rows on first page")
+                print(f"  Found {len(page_rows)} rows on current page")
 
                 all_rows.extend(page_rows)
+
+                if LIMIT_LOCATIONS > 0 and len(all_rows) >= LIMIT_LOCATIONS:
+                    all_rows = all_rows[:LIMIT_LOCATIONS]
+                    break
+
+            if LIMIT_LOCATIONS > 0 and len(all_rows) >= LIMIT_LOCATIONS:
+                break
 
         await browser.close()
 
     return all_rows
 
 
+async def write_to_google_sheets(raw_rows: List[dict], merged_rows: List[dict]):
+    payload = {
+        "action": "replace_all",
+        "raw_rows": raw_rows,
+        "merged_rows": merged_rows
+    }
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post(
+            GOOGLE_SHEETS_URL,
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=aiohttp.ClientTimeout(total=180)
+        ) as response:
+            text = await response.text()
+            print(f"Google Sheets response status: {response.status}")
+            print(f"Google Sheets response body: {text[:500]}")
+            if response.status != 200:
+                raise Exception(f"Google Sheets write failed with HTTP {response.status}: {text}")
+
+
 async def main():
     print("Starting ACHC scraper...")
-    rows = await run_scrape()
+    raw_rows = await run_scrape()
 
-    if not rows:
+    if not raw_rows:
         raise Exception("No rows scraped")
 
-    unique_rows = deduplicate_rows(rows)
-    print(f"Scraped {len(rows)} total rows, {len(unique_rows)} unique")
+    deduped_raw_rows = deduplicate_raw_rows(raw_rows)
+    merged_rows = build_merged_locations(deduped_raw_rows)
 
-    print("Sample rows:")
-    for row in unique_rows[:5]:
-        print(row)
+    print(f"Scraped {len(raw_rows)} total raw rows")
+    print(f"Deduped raw rows: {len(deduped_raw_rows)}")
+    print(f"Merged locations: {len(merged_rows)}")
 
-    for row in unique_rows[:5]:
-        print(row["organization"], "-", row["city"], row["state"])
+    print("Sample merged rows:")
+    for row in merged_rows[:5]:
+        print(row["display_name"], "-", row["city"], row["state"])
 
-    print("Test scrape completed successfully")
+    await write_to_google_sheets(deduped_raw_rows, merged_rows)
+
+    print("Scraper completed successfully")
+    print("Raw + merged data written to Google Sheets")
 
 
 if __name__ == "__main__":
