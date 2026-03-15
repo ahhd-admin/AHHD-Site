@@ -15,51 +15,139 @@ AMS_URL = "https://ams.achc.org/accredited_organizations.aspx"
 
 PROGRAMS = ["Home Care", "Home Health", "Hospice"]
 
-# Search labels used in ACHC
+# Set this to a single state for fast testing.
 SEARCH_STATES = [
-    "Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado", "Connecticut", "Delaware",
-    "District of Columbia", "Florida", "Georgia", "Hawaii", "Idaho", "Illinois", "Indiana", "Iowa",
-    "Kansas", "Kentucky", "Louisiana", "Maine", "Maryland", "Massachusetts", "Michigan", "Minnesota",
-    "Mississippi", "Missouri", "Montana", "Nebraska", "Nevada", "New Hampshire", "New Jersey",
-    "New Mexico", "New York", "North Carolina", "North Dakota", "Ohio", "Oklahoma", "Oregon",
-    "Pennsylvania", "Rhode Island", "South Carolina", "South Dakota", "Tennessee", "Texas", "Utah",
-    "Vermont", "Virginia", "Washington", "West Virginia", "Wisconsin", "Wyoming"
+    "Illinois"
 ]
 
 STATE_DISPLAY_MAP = {
-    "Alabama": "Alabama", "Alaska": "Alaska", "Arizona": "Arizona", "Arkansas": "Arkansas",
-    "California": "California", "Colorado": "Colorado", "Connecticut": "Connecticut", "Delaware": "Delaware",
-    "District of Columbia": "Washington, D.C.", "Washington, D.C.": "Washington, D.C.", "DC": "Washington, D.C.",
-    "Florida": "Florida", "Georgia": "Georgia", "Hawaii": "Hawaii", "Idaho": "Idaho",
-    "Illinois": "Illinois", "Indiana": "Indiana", "Iowa": "Iowa", "Kansas": "Kansas",
-    "Kentucky": "Kentucky", "Louisiana": "Louisiana", "Maine": "Maine", "Maryland": "Maryland",
-    "Massachusetts": "Massachusetts", "Michigan": "Michigan", "Minnesota": "Minnesota",
-    "Mississippi": "Mississippi", "Missouri": "Missouri", "Montana": "Montana", "Nebraska": "Nebraska",
-    "Nevada": "Nevada", "New Hampshire": "New Hampshire", "New Jersey": "New Jersey",
-    "New Mexico": "New Mexico", "New York": "New York", "North Carolina": "North Carolina",
-    "North Dakota": "North Dakota", "Ohio": "Ohio", "Oklahoma": "Oklahoma", "Oregon": "Oregon",
-    "Pennsylvania": "Pennsylvania", "Rhode Island": "Rhode Island", "South Carolina": "South Carolina",
-    "South Dakota": "South Dakota", "Tennessee": "Tennessee", "Texas": "Texas", "Utah": "Utah",
-    "Vermont": "Vermont", "Virginia": "Virginia", "Washington": "Washington",
-    "West Virginia": "West Virginia", "Wisconsin": "Wisconsin", "Wyoming": "Wyoming"
+    "Alabama": "Alabama",
+    "Alaska": "Alaska",
+    "Arizona": "Arizona",
+    "Arkansas": "Arkansas",
+    "California": "California",
+    "Colorado": "Colorado",
+    "Connecticut": "Connecticut",
+    "Delaware": "Delaware",
+    "District of Columbia": "Washington, D.C.",
+    "Washington, D.C.": "Washington, D.C.",
+    "DC": "Washington, D.C.",
+    "Florida": "Florida",
+    "Georgia": "Georgia",
+    "Hawaii": "Hawaii",
+    "Idaho": "Idaho",
+    "Illinois": "Illinois",
+    "Indiana": "Indiana",
+    "Iowa": "Iowa",
+    "Kansas": "Kansas",
+    "Kentucky": "Kentucky",
+    "Louisiana": "Louisiana",
+    "Maine": "Maine",
+    "Maryland": "Maryland",
+    "Massachusetts": "Massachusetts",
+    "Michigan": "Michigan",
+    "Minnesota": "Minnesota",
+    "Mississippi": "Mississippi",
+    "Missouri": "Missouri",
+    "Montana": "Montana",
+    "Nebraska": "Nebraska",
+    "Nevada": "Nevada",
+    "New Hampshire": "New Hampshire",
+    "New Jersey": "New Jersey",
+    "New Mexico": "New Mexico",
+    "New York": "New York",
+    "North Carolina": "North Carolina",
+    "North Dakota": "North Dakota",
+    "Ohio": "Ohio",
+    "Oklahoma": "Oklahoma",
+    "Oregon": "Oregon",
+    "Pennsylvania": "Pennsylvania",
+    "Rhode Island": "Rhode Island",
+    "South Carolina": "South Carolina",
+    "South Dakota": "South Dakota",
+    "Tennessee": "Tennessee",
+    "Texas": "Texas",
+    "Utah": "Utah",
+    "Vermont": "Vermont",
+    "Virginia": "Virginia",
+    "Washington": "Washington",
+    "West Virginia": "West Virginia",
+    "Wisconsin": "Wisconsin",
+    "Wyoming": "Wyoming"
 }
 
 STATE_ABBR_MAP = {
-    "Alabama": "AL", "Alaska": "AK", "Arizona": "AZ", "Arkansas": "AR",
-    "California": "CA", "Colorado": "CO", "Connecticut": "CT", "Delaware": "DE",
-    "District of Columbia": "DC", "Washington, D.C.": "DC", "DC": "DC",
-    "Florida": "FL", "Georgia": "GA", "Hawaii": "HI", "Idaho": "ID",
-    "Illinois": "IL", "Indiana": "IN", "Iowa": "IA", "Kansas": "KS",
-    "Kentucky": "KY", "Louisiana": "LA", "Maine": "ME", "Maryland": "MD",
-    "Massachusetts": "MA", "Michigan": "MI", "Minnesota": "MN", "Mississippi": "MS",
-    "Missouri": "MO", "Montana": "MT", "Nebraska": "NE", "Nevada": "NV",
-    "New Hampshire": "NH", "New Jersey": "NJ", "New Mexico": "NM", "New York": "NY",
-    "North Carolina": "NC", "North Dakota": "ND", "Ohio": "OH", "Oklahoma": "OK",
-    "Oregon": "OR", "Pennsylvania": "PA", "Rhode Island": "RI", "South Carolina": "SC",
-    "South Dakota": "SD", "Tennessee": "TN", "Texas": "TX", "Utah": "UT",
-    "Vermont": "VT", "Virginia": "VA", "Washington": "WA", "West Virginia": "WV",
-    "Wisconsin": "WI", "Wyoming": "WY"
+    "Alabama": "AL",
+    "Alaska": "AK",
+    "Arizona": "AZ",
+    "Arkansas": "AR",
+    "California": "CA",
+    "Colorado": "CO",
+    "Connecticut": "CT",
+    "Delaware": "DE",
+    "District of Columbia": "DC",
+    "Washington, D.C.": "DC",
+    "DC": "DC",
+    "Florida": "FL",
+    "Georgia": "GA",
+    "Hawaii": "HI",
+    "Idaho": "ID",
+    "Illinois": "IL",
+    "Indiana": "IN",
+    "Iowa": "IA",
+    "Kansas": "KS",
+    "Kentucky": "KY",
+    "Louisiana": "LA",
+    "Maine": "ME",
+    "Maryland": "MD",
+    "Massachusetts": "MA",
+    "Michigan": "MI",
+    "Minnesota": "MN",
+    "Mississippi": "MS",
+    "Missouri": "MO",
+    "Montana": "MT",
+    "Nebraska": "NE",
+    "Nevada": "NV",
+    "New Hampshire": "NH",
+    "New Jersey": "NJ",
+    "New Mexico": "NM",
+    "New York": "NY",
+    "North Carolina": "NC",
+    "North Dakota": "ND",
+    "Ohio": "OH",
+    "Oklahoma": "OK",
+    "Oregon": "OR",
+    "Pennsylvania": "PA",
+    "Rhode Island": "RI",
+    "South Carolina": "SC",
+    "South Dakota": "SD",
+    "Tennessee": "TN",
+    "Texas": "TX",
+    "Utah": "UT",
+    "Vermont": "VT",
+    "Virginia": "VA",
+    "Washington": "WA",
+    "West Virginia": "WV",
+    "Wisconsin": "WI",
+    "Wyoming": "WY"
 }
+
+COUNTRY_PREFERRED_LABELS = [
+    "USA",
+    "United States",
+    "United States of America",
+    "U.S.A.",
+    "U.S.",
+    "US"
+]
+
+COUNTRY_PARTIAL_MATCHES = [
+    "united states",
+    "usa",
+    "u.s.a",
+    "u.s.",
+    " us "
+]
 
 LIMIT_LOCATIONS = int(os.getenv("LIMIT_LOCATIONS", "0"))
 GOOGLE_SHEETS_URL = os.getenv("GOOGLE_SHEETS_WEB_APP_URL")
@@ -72,12 +160,18 @@ async def polite_pause(min_seconds: float = 0.35, max_seconds: float = 0.9):
     await asyncio.sleep(random.uniform(min_seconds, max_seconds))
 
 
+def normalize_text(value: str) -> str:
+    return re.sub(r"\s+", " ", value.strip().lower())
+
+
 def split_city_state_zip(text: str) -> Tuple[str, str, str]:
     if not text:
         return ("", "", "")
+
     m = re.match(r"^(.*?),\s*([A-Z]{2})\s+(\d{5}(?:-\d{4})?)$", text.strip())
     if not m:
         return ("", "", "")
+
     return m.group(1), m.group(2), m.group(3)
 
 
@@ -112,9 +206,56 @@ async def find_select_with_states(page):
         sel = selects.nth(i)
         opts = [t.strip() for t in await sel.locator("option").all_inner_texts()]
         hits = sum(1 for o in opts if o in states_set)
-        if hits > 30:
+        if hits >= 1:
             return sel
     return None
+
+
+async def find_country_select_and_value(page):
+    selects = page.locator("select")
+
+    for i in range(await selects.count()):
+        sel = selects.nth(i)
+        option_locator = sel.locator("option")
+        option_count = await option_locator.count()
+
+        options = []
+        for j in range(option_count):
+            opt = option_locator.nth(j)
+            label = (await opt.inner_text()).strip()
+            value = (await opt.get_attribute("value")) or ""
+            options.append({
+                "label": label,
+                "value": value
+            })
+
+        labels = [o["label"] for o in options]
+        normalized_labels = [normalize_text(label) for label in labels]
+
+        if not any(
+            keyword in label
+            for label in normalized_labels
+            for keyword in ["usa", "united states", "canada", "mexico"]
+        ):
+            continue
+
+        for preferred in COUNTRY_PREFERRED_LABELS:
+            preferred_norm = normalize_text(preferred)
+            for option in options:
+                if normalize_text(option["label"]) == preferred_norm:
+                    return sel, option["value"], option["label"]
+
+        for option in options:
+            label_norm = normalize_text(option["label"])
+            if "united states" in label_norm or label_norm in ["usa", "us", "u.s.", "u.s.a."]:
+                return sel, option["value"], option["label"]
+
+        for option in options:
+            label_norm = f" {normalize_text(option['label'])} "
+            if any(token in label_norm for token in COUNTRY_PARTIAL_MATCHES):
+                return sel, option["value"], option["label"]
+
+    return None, None, None
 
 
 async def click_search(page):
@@ -133,8 +274,7 @@ async def click_search(page):
 
 
 async def wait_for_results(page):
-    # Fast but safer than relying only on networkidle for ASP.NET pages
-    await page.wait_for_timeout(800)
+    await page.wait_for_timeout(1800)
 
 
 async def scrape_current_page_rows(page, program: str, state_label: str) -> List[dict]:
@@ -143,6 +283,7 @@ async def scrape_current_page_rows(page, program: str, state_label: str) -> List
 
     for i in range(await tables.count()):
         table = tables.nth(i)
+
         try:
             trs = await table.locator("tr").all()
         except Exception:
@@ -192,9 +333,19 @@ async def scrape_current_page_rows(page, program: str, state_label: str) -> List
     return rows
 
 
+async def save_debug_artifacts(page, label: str):
+    os.makedirs("debug", exist_ok=True)
+    safe = re.sub(r"[^a-zA-Z0-9_-]", "_", label)
+    await page.screenshot(path=f"debug/{safe}.png", full_page=True)
+    html = await page.content()
+    with open(f"debug/{safe}.html", "w", encoding="utf-8") as f:
+        f.write(html)
+
+
 def deduplicate_rows(rows: List[dict]) -> List[dict]:
     seen = set()
     unique = []
+
     for row in rows:
         key = (
             row["organization"].strip().lower(),
@@ -206,11 +357,13 @@ def deduplicate_rows(rows: List[dict]) -> List[dict]:
         if key not in seen:
             seen.add(key)
             unique.append(row)
+
     return unique
 
 
 async def run_scrape() -> List[dict]:
     all_rows = []
+    debug_saved = 0
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(
@@ -235,10 +388,17 @@ async def run_scrape() -> List[dict]:
 
                 prog_select = await find_select_with_programs(page)
                 state_select = await find_select_with_states(page)
+                country_select, country_value, country_label = await find_country_select_and_value(page)
 
-                if prog_select is None or state_select is None:
-                    print("  Could not locate dropdowns. Skipping.")
+                if prog_select is None or state_select is None or country_select is None or country_value is None:
+                    print("  Could not locate one or more dropdowns. Skipping.")
+                    if debug_saved < 2:
+                        await save_debug_artifacts(page, f"missing_dropdowns_{program}_{state_label}")
+                        debug_saved += 1
                     continue
+
+                await country_select.select_option(value=country_value)
+                print(f"  Selected country option: {country_label}")
 
                 await prog_select.select_option(label=program)
                 await state_select.select_option(label=state_label)
@@ -250,6 +410,11 @@ async def run_scrape() -> List[dict]:
 
                 page_rows = await scrape_current_page_rows(page, program, state_label)
                 print(f"  Found {len(page_rows)} rows on first page")
+
+                if not page_rows and debug_saved < 4:
+                    await save_debug_artifacts(page, f"no_rows_{program}_{state_label}")
+                    debug_saved += 1
+
                 all_rows.extend(page_rows)
 
                 while page_rows:
