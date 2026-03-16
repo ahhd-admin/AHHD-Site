@@ -13,7 +13,7 @@ load_dotenv()
 
 AMS_URL = "https://ams.achc.org/accredited_organizations.aspx"
 
-DEFAULT_PROGRAMS = ["Home Care", "Home Health", "Hospice"]
+DEFAULT_PROGRAMS = ["Home Care", "Home Health", "Hospice", "Ambulatory Care", "Assisted Living", "Behavioral Health", "Dentistry", "Home Infusion Therapy", "Palliative Care", "Renal Dialysis", "Sleep"]
 DEFAULT_TRIGGER_STATE = "Texas"
 
 LIMIT_LOCATIONS = int(os.getenv("LIMIT_LOCATIONS", "25"))
