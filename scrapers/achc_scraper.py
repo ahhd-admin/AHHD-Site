@@ -1,9 +1,10 @@
 import asyncio
+import json
 import os
 import random
 import re
 from datetime import datetime
-from typing import List, Tuple
+from typing import Dict, List, Set, Tuple
 
 import aiohttp
 from dotenv import load_dotenv
@@ -27,35 +28,84 @@ DEFAULT_PROGRAMS = [
     "Sleep",
     "Community Retail",
     "DMEPOS",
-    "Pharmacy"
+    "Pharmacy",
 ]
 
 DEFAULT_TRIGGER_STATE = "Texas"
 
-LIMIT_LOCATIONS = int(os.getenv("LIMIT_LOCATIONS", "25"))
+# 0 means unlimited / full pull
+LIMIT_LOCATIONS = int(os.getenv("LIMIT_LOCATIONS", "0"))
+
 GOOGLE_SHEETS_URL = os.getenv("GOOGLE_SHEETS_WEB_APP_URL")
 TEST_MODE = os.getenv("TEST_MODE", "false").lower() == "true"
-
 TEST_PROGRAMS_ENV = os.getenv("TEST_PROGRAMS", "").strip()
 TRIGGER_STATE = os.getenv("TRIGGER_STATE", DEFAULT_TRIGGER_STATE).strip()
 
-PROGRAMS = [p.strip() for p in TEST_PROGRAMS_ENV.split(",") if p.strip()] if TEST_PROGRAMS_ENV else DEFAULT_PROGRAMS
+# Diagnostic options
+ENABLE_COVERAGE_DIAGNOSTIC = os.getenv("ENABLE_COVERAGE_DIAGNOSTIC", "true").lower() == "true"
+COVERAGE_JSON_PATH = os.getenv("COVERAGE_JSON_PATH", "coverage_summary.json").strip()
+
+PROGRAMS = (
+    [p.strip() for p in TEST_PROGRAMS_ENV.split(",") if p.strip()]
+    if TEST_PROGRAMS_ENV
+    else DEFAULT_PROGRAMS
+)
 
 if not GOOGLE_SHEETS_URL:
     raise ValueError("Missing GOOGLE_SHEETS_WEB_APP_URL in environment variables")
 
 STATE_ABBR_MAP = {
-    "Alabama": "AL", "Alaska": "AK", "Arizona": "AZ", "Arkansas": "AR", "California": "CA",
-    "Colorado": "CO", "Connecticut": "CT", "Delaware": "DE", "District of Columbia": "DC",
-    "Florida": "FL", "Georgia": "GA", "Hawaii": "HI", "Idaho": "ID", "Illinois": "IL",
-    "Indiana": "IN", "Iowa": "IA", "Kansas": "KS", "Kentucky": "KY", "Louisiana": "LA",
-    "Maine": "ME", "Maryland": "MD", "Massachusetts": "MA", "Michigan": "MI", "Minnesota": "MN",
-    "Mississippi": "MS", "Missouri": "MO", "Montana": "MT", "Nebraska": "NE", "Nevada": "NV",
-    "New Hampshire": "NH", "New Jersey": "NJ", "New Mexico": "NM", "New York": "NY",
-    "North Carolina": "NC", "North Dakota": "ND", "Ohio": "OH", "Oklahoma": "OK", "Oregon": "OR",
-    "Pennsylvania": "PA", "Rhode Island": "RI", "South Carolina": "SC", "South Dakota": "SD",
-    "Tennessee": "TN", "Texas": "TX", "Utah": "UT", "Vermont": "VT", "Virginia": "VA",
-    "Washington": "WA", "West Virginia": "WV", "Wisconsin": "WI", "Wyoming": "WY"
+    "Alabama": "AL",
+    "Alaska": "AK",
+    "Arizona": "AZ",
+    "Arkansas": "AR",
+    "California": "CA",
+    "Colorado": "CO",
+    "Connecticut": "CT",
+    "Delaware": "DE",
+    "District of Columbia": "DC",
+    "Florida": "FL",
+    "Georgia": "GA",
+    "Hawaii": "HI",
+    "Idaho": "ID",
+    "Illinois": "IL",
+    "Indiana": "IN",
+    "Iowa": "IA",
+    "Kansas": "KS",
+    "Kentucky": "KY",
+    "Louisiana": "LA",
+    "Maine": "ME",
+    "Maryland": "MD",
+    "Massachusetts": "MA",
+    "Michigan": "MI",
+    "Minnesota": "MN",
+    "Mississippi": "MS",
+    "Missouri": "MO",
+    "Montana": "MT",
+    "Nebraska": "NE",
+    "Nevada": "NV",
+    "New Hampshire": "NH",
+    "New Jersey": "NJ",
+    "New Mexico": "NM",
+    "New York": "NY",
+    "North Carolina": "NC",
+    "North Dakota": "ND",
+    "Ohio": "OH",
+    "Oklahoma": "OK",
+    "Oregon": "OR",
+    "Pennsylvania": "PA",
+    "Rhode Island": "RI",
+    "South Carolina": "SC",
+    "South Dakota": "SD",
+    "Tennessee": "TN",
+    "Texas": "TX",
+    "Utah": "UT",
+    "Vermont": "VT",
+    "Virginia": "VA",
+    "Washington": "WA",
+    "West Virginia": "WV",
+    "Wisconsin": "WI",
+    "Wyoming": "WY",
 }
 
 COUNTRY_PREFERRED_LABELS = [
@@ -64,8 +114,27 @@ COUNTRY_PREFERRED_LABELS = [
     "United States of America",
     "U.S.A.",
     "U.S.",
-    "US"
+    "US",
 ]
+
+EXPECTED_PROGRAMS: Set[str] = set(DEFAULT_PROGRAMS)
+
+CANONICAL_PROGRAM_MAP: Dict[str, str] = {
+    "home care": "Home Care",
+    "home health": "Home Health",
+    "hospice": "Hospice",
+    "ambulatory care": "Ambulatory Care",
+    "assisted living": "Assisted Living",
+    "behavioral health": "Behavioral Health",
+    "dentistry": "Dentistry",
+    "home infusion therapy": "Home Infusion Therapy",
+    "palliative care": "Palliative Care",
+    "renal dialysis": "Renal Dialysis",
+    "sleep": "Sleep",
+    "community retail": "Community Retail",
+    "dmepos": "DMEPOS",
+    "pharmacy": "Pharmacy",
+}
 
 
 async def polite_pause(min_seconds: float = 0.12, max_seconds: float = 0.28):
@@ -79,9 +148,11 @@ def normalize_text(value: str) -> str:
 def split_city_state_zip(text: str) -> Tuple[str, str, str]:
     if not text:
         return "", "", ""
+
     match = re.match(r"^(.*?),\s*([A-Z]{2})\s+(\d{5}(?:-\d{4})?)$", text.strip())
     if not match:
         return "", "", ""
+
     return match.group(1), match.group(2), match.group(3)
 
 
@@ -96,8 +167,8 @@ def parse_raw_block(raw_text: str) -> Tuple[str, str, str]:
         return "", "", ""
 
     lines = [line.strip() for line in raw_text.split("\n") if line.strip()]
-
     cleaned_lines = []
+
     for line in lines:
         cleaned = line.replace("Show/Hide Accreditation Details", "").strip()
         cleaned = re.sub(r"\s+", " ", cleaned).strip(" \t")
@@ -119,8 +190,49 @@ def parse_raw_block(raw_text: str) -> Tuple[str, str, str]:
 
     raw_address_block = " | ".join(address_lines)
     _, parsed_state_abbr, _ = split_city_state_zip(city_state_zip)
-
     return raw_name_line, raw_address_block, parsed_state_abbr
+
+
+def detect_program_mentions(raw_text: str) -> List[str]:
+    """
+    Tries to detect known program labels inside raw text.
+    This is heuristic and intended for diagnostics only.
+    """
+    text_norm = normalize_text(raw_text)
+    found = []
+
+    for key, canonical in CANONICAL_PROGRAM_MAP.items():
+        if key in text_norm:
+            found.append(canonical)
+
+    return sorted(set(found))
+
+
+def summarize_unmapped_mentions(rows: List[dict]) -> List[str]:
+    """
+    Finds probable accreditation/program-like fragments in raw_text that do not
+    match the canonical list. This is intentionally lightweight and diagnostic.
+    """
+    candidates = set()
+
+    patterns = [
+        r"Accreditation(?:\s+Commission)?[:\s]+([A-Za-z0-9&,\-/ ]{3,80})",
+        r"Program(?:\s+Type)?[:\s]+([A-Za-z0-9&,\-/ ]{3,80})",
+    ]
+
+    for row in rows:
+        raw_text = row.get("raw_text", "") or ""
+        for pattern in patterns:
+            for match in re.findall(pattern, raw_text, flags=re.IGNORECASE):
+                candidate = re.sub(r"\s+", " ", match).strip(" .,:;|-")
+                if not candidate:
+                    continue
+
+                candidate_norm = normalize_text(candidate)
+                if candidate_norm not in CANONICAL_PROGRAM_MAP:
+                    candidates.add(candidate)
+
+    return sorted(candidates)
 
 
 async def find_select_with_programs(page):
@@ -147,7 +259,6 @@ async def find_select_with_states(page):
 
 async def find_country_select_and_value(page):
     selects = page.locator("select")
-
     for i in range(await selects.count()):
         sel = selects.nth(i)
         option_locator = sel.locator("option")
@@ -162,7 +273,6 @@ async def find_country_select_and_value(page):
 
         normalized_labels = [normalize_text(o["label"]) for o in options]
         joined = " ".join(normalized_labels)
-
         if "usa" not in joined and "united states" not in joined:
             continue
 
@@ -185,12 +295,13 @@ async def click_search(page):
         "input[value='Find']",
         "input[value='Search']",
         "button:has-text('Find')",
-        "button:has-text('Search')"
+        "button:has-text('Search')",
     ]
     for sel in selectors:
         if await page.locator(sel).count():
             await page.locator(sel).first.click()
             return
+
     await page.keyboard.press("Enter")
 
 
@@ -198,12 +309,16 @@ async def wait_for_results(page):
     await page.wait_for_timeout(1800)
 
 
-async def scrape_raw_rows(page, searched_program: str, trigger_state: str) -> List[dict]:
-    rows = []
+async def count_detail_links(page) -> int:
+    detail_links = page.locator("a:has-text('Show/Hide Accreditation Details')")
+    return await detail_links.count()
 
+
+async def scrape_raw_rows(page, searched_program: str, trigger_state: str) -> Tuple[List[dict], int]:
+    rows = []
     detail_links = page.locator("a:has-text('Show/Hide Accreditation Details')")
     link_count = await detail_links.count()
-    print(f"  Detail links found in DOM: {link_count}")
+    print(f" Detail links found in DOM for {searched_program}: {link_count}")
 
     trigger_state_abbr = STATE_ABBR_MAP.get(trigger_state, "")
 
@@ -212,7 +327,7 @@ async def scrape_raw_rows(page, searched_program: str, trigger_state: str) -> Li
 
         candidate_locators = [
             link.locator("xpath=ancestor::tr[1]"),
-            link.locator("xpath=ancestor::div[1]")
+            link.locator("xpath=ancestor::div[1]"),
         ]
 
         raw_text = ""
@@ -232,36 +347,40 @@ async def scrape_raw_rows(page, searched_program: str, trigger_state: str) -> Li
             continue
 
         cleaned_raw_text = raw_text.replace("Show/Hide Accreditation Details", "").strip()
-
         raw_name_line, raw_address_block, parsed_state_abbr = parse_raw_block(cleaned_raw_text)
+
         matches_trigger_state = (
-            parsed_state_abbr == trigger_state_abbr
-            if parsed_state_abbr and trigger_state_abbr
-            else False
+            parsed_state_abbr == trigger_state_abbr if parsed_state_abbr and trigger_state_abbr else False
         )
 
-        rows.append({
-            "raw_index": i + 1,
-            "container_type": container_type,
-            "searched_program_type": searched_program,
-            "search_trigger_state": trigger_state,
-            "result_scope": f"Multi-state raw ACHC pull; trigger state = {trigger_state}",
-            "raw_name_line": raw_name_line,
-            "raw_address_block": raw_address_block,
-            "parsed_state_abbr": parsed_state_abbr,
-            "matches_trigger_state": matches_trigger_state,
-            "raw_text": cleaned_raw_text,
-            "source_url": AMS_URL,
-            "last_seen": datetime.utcnow().isoformat()
-        })
+        detected_program_mentions = detect_program_mentions(cleaned_raw_text)
 
+        rows.append(
+            {
+                "raw_index": i + 1,
+                "container_type": container_type,
+                "searched_program_type": searched_program,
+                "search_trigger_state": trigger_state,
+                "result_scope": f"Multi-state raw ACHC pull; trigger state = {trigger_state}",
+                "raw_name_line": raw_name_line,
+                "raw_address_block": raw_address_block,
+                "parsed_state_abbr": parsed_state_abbr,
+                "matches_trigger_state": matches_trigger_state,
+                "detected_program_mentions": ", ".join(detected_program_mentions),
+                "raw_text": cleaned_raw_text,
+                "source_url": AMS_URL,
+                "last_seen": datetime.utcnow().isoformat(),
+            }
+        )
+
+        # 0 means unlimited
         if LIMIT_LOCATIONS > 0 and len(rows) >= LIMIT_LOCATIONS:
             break
 
-    return rows
+    return rows, link_count
 
 
-async def scrape_program(page, program: str, trigger_state: str) -> List[dict]:
+async def scrape_program(page, program: str, trigger_state: str) -> Tuple[List[dict], dict]:
     print(f"Fetching: {program} / trigger state {trigger_state}")
 
     await page.goto(AMS_URL, timeout=60000)
@@ -275,54 +394,123 @@ async def scrape_program(page, program: str, trigger_state: str) -> List[dict]:
         raise Exception("Could not locate one or more dropdowns")
 
     await country_select.select_option(value=country_value)
-    print(f"  Selected country option: {country_label}")
+    print(f" Selected country option: {country_label}")
 
     await prog_select.select_option(label=program)
     await state_select.select_option(label=trigger_state)
-    print(f"  Selected trigger state: {trigger_state}")
-    await polite_pause()
+    print(f" Selected trigger state: {trigger_state}")
 
+    await polite_pause()
     await click_search(page)
     await wait_for_results(page)
 
-    rows = await scrape_raw_rows(page, program, trigger_state)
-    print(f"  Found {len(rows)} raw rows for {program}")
+    rows, detail_link_count = await scrape_raw_rows(page, program, trigger_state)
 
-    return rows
+    unique_states = sorted({r["parsed_state_abbr"] for r in rows if r.get("parsed_state_abbr")})
+    sample_names = [r["raw_name_line"] for r in rows[:5] if r.get("raw_name_line")]
+    detected_mentions = sorted(
+        {
+            mention.strip()
+            for row in rows
+            for mention in (row.get("detected_program_mentions", "") or "").split(",")
+            if mention.strip()
+        }
+    )
+
+    coverage = {
+        "program_requested": program,
+        "requested_program_unmapped": program not in EXPECTED_PROGRAMS,
+        "detail_links_found": detail_link_count,
+        "rows_parsed": len(rows),
+        "unique_parsed_states_count": len(unique_states),
+        "unique_parsed_states_sample": unique_states[:15],
+        "sample_names": sample_names,
+        "detected_program_mentions": detected_mentions,
+    }
+
+    print(f" Found {len(rows)} raw rows for {program}")
+    print(f" Coverage summary for {program}: {json.dumps(coverage, indent=2)}")
+
+    return rows, coverage
 
 
-async def run_scrape() -> List[dict]:
+async def run_scrape() -> Tuple[List[dict], List[dict]]:
     all_rows = []
+    coverage_summary = []
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=True,
-            args=["--disable-dev-shm-usage", "--no-sandbox"]
+            args=["--disable-dev-shm-usage", "--no-sandbox"],
         )
+
         context = await browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122 Safari/537.36"
         )
         page = await context.new_page()
 
         for program in PROGRAMS:
-            rows = await scrape_program(page, program, TRIGGER_STATE)
+            rows, coverage = await scrape_program(page, program, TRIGGER_STATE)
             all_rows.extend(rows)
+            coverage_summary.append(coverage)
+
             print(f"Total raw rows so far: {len(all_rows)}")
 
+            # 0 means unlimited
             if LIMIT_LOCATIONS > 0 and len(all_rows) >= LIMIT_LOCATIONS:
                 all_rows = all_rows[:LIMIT_LOCATIONS]
+                print(f"Global LIMIT_LOCATIONS reached: {LIMIT_LOCATIONS}")
                 break
 
         await browser.close()
 
-    return all_rows
+    return all_rows, coverage_summary
+
+
+def print_coverage_report(coverage_summary: List[dict], all_rows: List[dict]):
+    print("\n" + "=" * 80)
+    print("PROGRAM COVERAGE DIAGNOSTIC REPORT")
+    print("=" * 80)
+
+    missing_programs = [c["program_requested"] for c in coverage_summary if c["rows_parsed"] == 0]
+    requested_unmapped = [c["program_requested"] for c in coverage_summary if c["requested_program_unmapped"]]
+    discovered_unmapped = summarize_unmapped_mentions(all_rows)
+
+    for item in coverage_summary:
+        print(json.dumps(item, indent=2))
+
+    print("-" * 80)
+    print(f"Programs requested: {PROGRAMS}")
+    print(f"Programs with zero parsed rows: {missing_programs}")
+    print(f"Requested program labels not in canonical list: {requested_unmapped}")
+    print(f"Possible unmapped discovered labels: {discovered_unmapped}")
+    print(f"Total raw rows captured: {len(all_rows)}")
+    print("=" * 80)
+
+    if ENABLE_COVERAGE_DIAGNOSTIC:
+        payload = {
+            "generated_at_utc": datetime.utcnow().isoformat(),
+            "trigger_state": TRIGGER_STATE,
+            "limit_locations": LIMIT_LOCATIONS,
+            "programs_requested": PROGRAMS,
+            "programs_with_zero_rows": missing_programs,
+            "requested_program_labels_unmapped": requested_unmapped,
+            "possible_unmapped_discovered_labels": discovered_unmapped,
+            "coverage_summary": coverage_summary,
+            "total_raw_rows": len(all_rows),
+        }
+
+        with open(COVERAGE_JSON_PATH, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2)
+
+        print(f"Coverage JSON written to: {COVERAGE_JSON_PATH}")
 
 
 async def write_to_google_sheets(raw_rows: List[dict]):
     payload = {
         "action": "replace_raw_only",
         "test_mode": TEST_MODE,
-        "raw_rows": raw_rows
+        "raw_rows": raw_rows,
     }
 
     async with aiohttp.ClientSession() as session:
@@ -330,11 +518,12 @@ async def write_to_google_sheets(raw_rows: List[dict]):
             GOOGLE_SHEETS_URL,
             json=payload,
             headers={"Content-Type": "application/json"},
-            timeout=aiohttp.ClientTimeout(total=180)
+            timeout=aiohttp.ClientTimeout(total=180),
         ) as response:
             text = await response.text()
             print(f"Google Sheets response status: {response.status}")
             print(f"Google Sheets response body: {text[:500]}")
+
             if response.status != 200:
                 raise Exception(f"Google Sheets write failed with HTTP {response.status}: {text}")
 
@@ -345,26 +534,32 @@ async def main():
     print(f"PROGRAMS: {PROGRAMS}")
     print(f"TRIGGER_STATE: {TRIGGER_STATE}")
     print(f"LIMIT_LOCATIONS: {LIMIT_LOCATIONS}")
+    print(f"ENABLE_COVERAGE_DIAGNOSTIC: {ENABLE_COVERAGE_DIAGNOSTIC}")
+    print(f"COVERAGE_JSON_PATH: {COVERAGE_JSON_PATH}")
 
-    raw_rows = await run_scrape()
+    all_rows, coverage_summary = await run_scrape()
 
-    if not raw_rows:
+    if not all_rows:
         raise Exception("No rows scraped")
 
-    print(f"Raw rows captured: {len(raw_rows)}")
+    print(f"Raw rows captured: {len(all_rows)}")
     print("Sample raw rows:")
-    for row in raw_rows[:3]:
-        print({
-            "raw_index": row["raw_index"],
-            "searched_program_type": row["searched_program_type"],
-            "search_trigger_state": row["search_trigger_state"],
-            "parsed_state_abbr": row["parsed_state_abbr"],
-            "matches_trigger_state": row["matches_trigger_state"],
-            "raw_name_line": row["raw_name_line"]
-        })
+    for row in all_rows[:3]:
+        print(
+            {
+                "raw_index": row["raw_index"],
+                "searched_program_type": row["searched_program_type"],
+                "search_trigger_state": row["search_trigger_state"],
+                "parsed_state_abbr": row["parsed_state_abbr"],
+                "matches_trigger_state": row["matches_trigger_state"],
+                "detected_program_mentions": row["detected_program_mentions"],
+                "raw_name_line": row["raw_name_line"],
+            }
+        )
 
-    await write_to_google_sheets(raw_rows)
+    print_coverage_report(coverage_summary, all_rows)
 
+    await write_to_google_sheets(all_rows)
     print("Raw data written to Google Sheets")
     print("Raw-only test completed successfully")
 
