@@ -6,7 +6,7 @@ on:
 jobs:
   test-scrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
 
     steps:
       - name: Checkout repository
@@ -23,12 +23,13 @@ jobs:
           pip install -r requirements.txt
           playwright install chromium
 
-      - name: Run full ACHC coverage diagnostic
+      - name: Run ACHC coverage diagnostic
         working-directory: ./scrapers
         env:
           GOOGLE_SHEETS_WEB_APP_URL: ${{ secrets.GOOGLE_SHEETS_WEB_APP_URL }}
           LIMIT_LOCATIONS: 0
           TEST_MODE: true
+          NO_STATE_FILTER: true
           TRIGGER_STATE: Texas
           ENABLE_COVERAGE_DIAGNOSTIC: true
           COVERAGE_JSON_PATH: coverage_summary.json
