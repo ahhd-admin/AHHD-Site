@@ -6,7 +6,7 @@ on:
 jobs:
   test-scrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - name: Checkout repository
@@ -32,6 +32,13 @@ jobs:
           TRIGGER_STATE: Texas
           ENABLE_COVERAGE_DIAGNOSTIC: true
           COVERAGE_JSON_PATH: coverage_summary.json
+          ENABLE_ZERO_RESULT_DEBUG: true
+          ZERO_RESULT_DEBUG_DIR: debug_artifacts
+          ZERO_RESULT_DEBUG_TARGETS: Home Health,Community Retail
+          PROGRAM_SELECTION_WAIT_MS: 2500
+          STATE_SELECTION_WAIT_MS: 1500
+          PRE_SEARCH_WAIT_MS: 2500
+          POST_SEARCH_WAIT_MS: 5000
         run: |
           python run_scraper_and_merge.py
 
@@ -40,3 +47,11 @@ jobs:
         with:
           name: achc-coverage-summary
           path: scrapers/coverage_summary.json
+
+      - name: Upload zero-result debug artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: achc-zero-result-debug
+          path: scrapers/debug_artifacts
+          if-no-files-found: warn
