@@ -6,7 +6,7 @@ on:
 jobs:
   test-scrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 60
 
     steps:
       - name: Checkout repository
@@ -23,13 +23,12 @@ jobs:
           pip install -r requirements.txt
           playwright install chromium
 
-      - name: Run raw-only ACHC test and push to test tab
+      - name: Run raw-only ACHC full dump and push to test tab
         working-directory: ./scrapers
         env:
           GOOGLE_SHEETS_WEB_APP_URL: ${{ secrets.GOOGLE_SHEETS_WEB_APP_URL }}
-          LIMIT_LOCATIONS: 25
+          LIMIT_LOCATIONS: 0
           TEST_MODE: true
-          TEST_PROGRAMS: Home Health,Hospice,Home Care
           TRIGGER_STATE: Texas
         run: |
           python run_scraper_and_merge.py
