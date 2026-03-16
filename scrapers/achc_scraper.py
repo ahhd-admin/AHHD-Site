@@ -13,7 +13,23 @@ load_dotenv()
 
 AMS_URL = "https://ams.achc.org/accredited_organizations.aspx"
 
-DEFAULT_PROGRAMS = ["Home Care", "Home Health", "Hospice", "Ambulatory Care", "Assisted Living", "Behavioral Health", "Dentistry", "Home Infusion Therapy", "Palliative Care", "Renal Dialysis", "Sleep", "Community Retail", "DMEPOS", "Pharmacy"]
+DEFAULT_PROGRAMS = [
+    "Home Care",
+    "Home Health",
+    "Hospice",
+    "Ambulatory Care",
+    "Assisted Living",
+    "Behavioral Health",
+    "Dentistry",
+    "Home Infusion Therapy",
+    "Palliative Care",
+    "Renal Dialysis",
+    "Sleep",
+    "Community Retail",
+    "DMEPOS",
+    "Pharmacy"
+]
+
 DEFAULT_TRIGGER_STATE = "Texas"
 
 LIMIT_LOCATIONS = int(os.getenv("LIMIT_LOCATIONS", "25"))
@@ -76,17 +92,26 @@ def parse_raw_block(raw_text: str) -> Tuple[str, str, str]:
     - raw_address_block
     - parsed_state_abbr
     """
-    lines = [line.strip() for line in raw_text.split("\n") if line.strip()]
-    lines = [line for line in lines if "Show/Hide Accreditation Details" not in line]
-
-    if not lines:
+    if not raw_text:
         return "", "", ""
 
-    raw_name_line = lines[0]
+    lines = [line.strip() for line in raw_text.split("\n") if line.strip()]
+
+    cleaned_lines = []
+    for line in lines:
+        cleaned = line.replace("Show/Hide Accreditation Details", "").strip()
+        cleaned = re.sub(r"\s+", " ", cleaned).strip(" \t")
+        if cleaned:
+            cleaned_lines.append(cleaned)
+
+    if not cleaned_lines:
+        return "", "", ""
+
+    raw_name_line = cleaned_lines[0]
     city_state_zip = ""
     address_lines = []
 
-    for line in lines[1:]:
+    for line in cleaned_lines[1:]:
         if re.search(r",\s*[A-Z]{2}\s+\d{5}(?:-\d{4})?$", line):
             city_state_zip = line
             break
@@ -206,8 +231,14 @@ async def scrape_raw_rows(page, searched_program: str, trigger_state: str) -> Li
         if not raw_text:
             continue
 
-        raw_name_line, raw_address_block, parsed_state_abbr = parse_raw_block(raw_text)
-        matches_trigger_state = parsed_state_abbr == trigger_state_abbr if parsed_state_abbr and trigger_state_abbr else False
+        cleaned_raw_text = raw_text.replace("Show/Hide Accreditation Details", "").strip()
+
+        raw_name_line, raw_address_block, parsed_state_abbr = parse_raw_block(cleaned_raw_text)
+        matches_trigger_state = (
+            parsed_state_abbr == trigger_state_abbr
+            if parsed_state_abbr and trigger_state_abbr
+            else False
+        )
 
         rows.append({
             "raw_index": i + 1,
@@ -219,7 +250,7 @@ async def scrape_raw_rows(page, searched_program: str, trigger_state: str) -> Li
             "raw_address_block": raw_address_block,
             "parsed_state_abbr": parsed_state_abbr,
             "matches_trigger_state": matches_trigger_state,
-            "raw_text": raw_text,
+            "raw_text": cleaned_raw_text,
             "source_url": AMS_URL,
             "last_seen": datetime.utcnow().isoformat()
         })
@@ -255,7 +286,7 @@ async def scrape_program(page, program: str, trigger_state: str) -> List[dict]:
     await wait_for_results(page)
 
     rows = await scrape_raw_rows(page, program, trigger_state)
-    print(f"  Found {len(rows)} raw rows")
+    print(f"  Found {len(rows)} raw rows for {program}")
 
     return rows
 
@@ -276,6 +307,7 @@ async def run_scrape() -> List[dict]:
         for program in PROGRAMS:
             rows = await scrape_program(page, program, TRIGGER_STATE)
             all_rows.extend(rows)
+            print(f"Total raw rows so far: {len(all_rows)}")
 
             if LIMIT_LOCATIONS > 0 and len(all_rows) >= LIMIT_LOCATIONS:
                 all_rows = all_rows[:LIMIT_LOCATIONS]
@@ -312,6 +344,7 @@ async def main():
     print(f"TEST_MODE: {TEST_MODE}")
     print(f"PROGRAMS: {PROGRAMS}")
     print(f"TRIGGER_STATE: {TRIGGER_STATE}")
+    print(f"LIMIT_LOCATIONS: {LIMIT_LOCATIONS}")
 
     raw_rows = await run_scrape()
 
