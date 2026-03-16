@@ -41,9 +41,18 @@ TEST_MODE = os.getenv("TEST_MODE", "false").lower() == "true"
 TEST_PROGRAMS_ENV = os.getenv("TEST_PROGRAMS", "").strip()
 TRIGGER_STATE = os.getenv("TRIGGER_STATE", DEFAULT_TRIGGER_STATE).strip()
 
-# Diagnostic options
 ENABLE_COVERAGE_DIAGNOSTIC = os.getenv("ENABLE_COVERAGE_DIAGNOSTIC", "true").lower() == "true"
 COVERAGE_JSON_PATH = os.getenv("COVERAGE_JSON_PATH", "coverage_summary.json").strip()
+
+ENABLE_ZERO_RESULT_DEBUG = os.getenv("ENABLE_ZERO_RESULT_DEBUG", "true").lower() == "true"
+ZERO_RESULT_DEBUG_DIR = os.getenv("ZERO_RESULT_DEBUG_DIR", "debug_artifacts").strip()
+ZERO_RESULT_DEBUG_TARGETS_ENV = os.getenv("ZERO_RESULT_DEBUG_TARGETS", "Home Health,Community Retail").strip()
+ZERO_RESULT_DEBUG_TARGETS = [p.strip() for p in ZERO_RESULT_DEBUG_TARGETS_ENV.split(",") if p.strip()]
+
+PROGRAM_SELECTION_WAIT_MS = int(os.getenv("PROGRAM_SELECTION_WAIT_MS", "2500"))
+STATE_SELECTION_WAIT_MS = int(os.getenv("STATE_SELECTION_WAIT_MS", "1500"))
+PRE_SEARCH_WAIT_MS = int(os.getenv("PRE_SEARCH_WAIT_MS", "2500"))
+POST_SEARCH_WAIT_MS = int(os.getenv("POST_SEARCH_WAIT_MS", "5000"))
 
 PROGRAMS = (
     [p.strip() for p in TEST_PROGRAMS_ENV.split(",") if p.strip()]
@@ -145,6 +154,10 @@ def normalize_text(value: str) -> str:
     return re.sub(r"\s+", " ", value.strip().lower())
 
 
+def safe_slug(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", value.strip().lower()).strip("-")
+
+
 def split_city_state_zip(text: str) -> Tuple[str, str, str]:
     if not text:
         return "", "", ""
@@ -157,12 +170,6 @@ def split_city_state_zip(text: str) -> Tuple[str, str, str]:
 
 
 def parse_raw_block(raw_text: str) -> Tuple[str, str, str]:
-    """
-    Returns:
-    - raw_name_line
-    - raw_address_block
-    - parsed_state_abbr
-    """
     if not raw_text:
         return "", "", ""
 
@@ -194,10 +201,6 @@ def parse_raw_block(raw_text: str) -> Tuple[str, str, str]:
 
 
 def detect_program_mentions(raw_text: str) -> List[str]:
-    """
-    Tries to detect known program labels inside raw text.
-    This is heuristic and intended for diagnostics only.
-    """
     text_norm = normalize_text(raw_text)
     found = []
 
@@ -209,10 +212,6 @@ def detect_program_mentions(raw_text: str) -> List[str]:
 
 
 def summarize_unmapped_mentions(rows: List[dict]) -> List[str]:
-    """
-    Finds probable accreditation/program-like fragments in raw_text that do not
-    match the canonical list. This is intentionally lightweight and diagnostic.
-    """
     candidates = set()
 
     patterns = [
@@ -290,6 +289,19 @@ async def find_country_select_and_value(page):
     return None, None, None
 
 
+async def get_selected_option_info(select_locator) -> Dict[str, str]:
+    value = (await select_locator.input_value()) or ""
+    selected_option = select_locator.locator("option:checked")
+    label = ""
+    if await selected_option.count():
+        label = (await selected_option.first.inner_text()).strip()
+
+    return {
+        "value": value,
+        "label": label,
+    }
+
+
 async def click_search(page):
     selectors = [
         "input[value='Find']",
@@ -306,12 +318,68 @@ async def click_search(page):
 
 
 async def wait_for_results(page):
-    await page.wait_for_timeout(1800)
+    await page.wait_for_timeout(POST_SEARCH_WAIT_MS)
 
 
 async def count_detail_links(page) -> int:
     detail_links = page.locator("a:has-text('Show/Hide Accreditation Details')")
     return await detail_links.count()
+
+
+async def write_zero_result_debug_artifacts(
+    page,
+    program: str,
+    trigger_state: str,
+    program_requested: str,
+    selected_program_before_search: Dict[str, str],
+    selected_state_before_search: Dict[str, str],
+    detail_links_found: int,
+):
+    if not ENABLE_ZERO_RESULT_DEBUG:
+        return
+
+    os.makedirs(ZERO_RESULT_DEBUG_DIR, exist_ok=True)
+
+    timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    program_slug = safe_slug(program)
+    state_slug = safe_slug(trigger_state)
+
+    screenshot_path = os.path.join(
+        ZERO_RESULT_DEBUG_DIR,
+        f"{timestamp}_{program_slug}_{state_slug}_zero_results.png",
+    )
+    html_path = os.path.join(
+        ZERO_RESULT_DEBUG_DIR,
+        f"{timestamp}_{program_slug}_{state_slug}_zero_results.html",
+    )
+    meta_path = os.path.join(
+        ZERO_RESULT_DEBUG_DIR,
+        f"{timestamp}_{program_slug}_{state_slug}_zero_results.json",
+    )
+
+    await page.screenshot(path=screenshot_path, full_page=True)
+
+    html = await page.content()
+    with open(html_path, "w", encoding="utf-8") as f:
+        f.write(html)
+
+    meta = {
+        "generated_at_utc": datetime.utcnow().isoformat(),
+        "program_requested": program_requested,
+        "trigger_state_requested": trigger_state,
+        "selected_program_before_search": selected_program_before_search,
+        "selected_state_before_search": selected_state_before_search,
+        "detail_links_found": detail_links_found,
+        "page_title": await page.title(),
+        "page_url": page.url,
+    }
+
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump(meta, f, indent=2)
+
+    print(f" Zero-result screenshot written to: {screenshot_path}")
+    print(f" Zero-result HTML written to: {html_path}")
+    print(f" Zero-result metadata written to: {meta_path}")
 
 
 async def scrape_raw_rows(page, searched_program: str, trigger_state: str) -> Tuple[List[dict], int]:
@@ -373,11 +441,28 @@ async def scrape_raw_rows(page, searched_program: str, trigger_state: str) -> Tu
             }
         )
 
-        # 0 means unlimited
         if LIMIT_LOCATIONS > 0 and len(rows) >= LIMIT_LOCATIONS:
             break
 
     return rows, link_count
+
+
+async def select_dropdown_with_verification(select_locator, label: str, wait_ms: int, select_name: str) -> Dict[str, Dict[str, str]]:
+    before = await get_selected_option_info(select_locator)
+    await select_locator.select_option(label=label)
+    await asyncio.sleep(wait_ms / 1000)
+    after = await get_selected_option_info(select_locator)
+
+    print(
+        f" {select_name} selection requested='{label}' | "
+        f"before_label='{before['label']}' before_value='{before['value']}' | "
+        f"after_label='{after['label']}' after_value='{after['value']}'"
+    )
+
+    return {
+        "before": before,
+        "after": after,
+    }
 
 
 async def scrape_program(page, program: str, trigger_state: str) -> Tuple[List[dict], dict]:
@@ -385,6 +470,7 @@ async def scrape_program(page, program: str, trigger_state: str) -> Tuple[List[d
 
     await page.goto(AMS_URL, timeout=60000)
     await page.wait_for_load_state("domcontentloaded")
+    await page.wait_for_timeout(1500)
 
     prog_select = await find_select_with_programs(page)
     state_select = await find_select_with_states(page)
@@ -394,17 +480,51 @@ async def scrape_program(page, program: str, trigger_state: str) -> Tuple[List[d
         raise Exception("Could not locate one or more dropdowns")
 
     await country_select.select_option(value=country_value)
+    await page.wait_for_timeout(1000)
     print(f" Selected country option: {country_label}")
 
-    await prog_select.select_option(label=program)
-    await state_select.select_option(label=trigger_state)
-    print(f" Selected trigger state: {trigger_state}")
+    program_selection_info = await select_dropdown_with_verification(
+        prog_select,
+        program,
+        PROGRAM_SELECTION_WAIT_MS,
+        "Program",
+    )
 
+    state_selection_info = await select_dropdown_with_verification(
+        state_select,
+        trigger_state,
+        STATE_SELECTION_WAIT_MS,
+        "State",
+    )
+
+    selected_program_before_search = await get_selected_option_info(prog_select)
+    selected_state_before_search = await get_selected_option_info(state_select)
+
+    print(
+        f" Final selections before search | "
+        f"program_label='{selected_program_before_search['label']}' "
+        f"program_value='{selected_program_before_search['value']}' | "
+        f"state_label='{selected_state_before_search['label']}' "
+        f"state_value='{selected_state_before_search['value']}'"
+    )
+
+    await page.wait_for_timeout(PRE_SEARCH_WAIT_MS)
     await polite_pause()
     await click_search(page)
     await wait_for_results(page)
 
     rows, detail_link_count = await scrape_raw_rows(page, program, trigger_state)
+
+    if detail_link_count == 0 and program in ZERO_RESULT_DEBUG_TARGETS:
+        await write_zero_result_debug_artifacts(
+            page=page,
+            program=program,
+            trigger_state=trigger_state,
+            program_requested=program,
+            selected_program_before_search=selected_program_before_search,
+            selected_state_before_search=selected_state_before_search,
+            detail_links_found=detail_link_count,
+        )
 
     unique_states = sorted({r["parsed_state_abbr"] for r in rows if r.get("parsed_state_abbr")})
     sample_names = [r["raw_name_line"] for r in rows[:5] if r.get("raw_name_line")]
@@ -420,6 +540,12 @@ async def scrape_program(page, program: str, trigger_state: str) -> Tuple[List[d
     coverage = {
         "program_requested": program,
         "requested_program_unmapped": program not in EXPECTED_PROGRAMS,
+        "program_selection_before": program_selection_info["before"],
+        "program_selection_after": program_selection_info["after"],
+        "state_selection_before": state_selection_info["before"],
+        "state_selection_after": state_selection_info["after"],
+        "selected_program_before_search": selected_program_before_search,
+        "selected_state_before_search": selected_state_before_search,
         "detail_links_found": detail_link_count,
         "rows_parsed": len(rows),
         "unique_parsed_states_count": len(unique_states),
@@ -456,7 +582,6 @@ async def run_scrape() -> Tuple[List[dict], List[dict]]:
 
             print(f"Total raw rows so far: {len(all_rows)}")
 
-            # 0 means unlimited
             if LIMIT_LOCATIONS > 0 and len(all_rows) >= LIMIT_LOCATIONS:
                 all_rows = all_rows[:LIMIT_LOCATIONS]
                 print(f"Global LIMIT_LOCATIONS reached: {LIMIT_LOCATIONS}")
@@ -536,10 +661,17 @@ async def main():
     print(f"LIMIT_LOCATIONS: {LIMIT_LOCATIONS}")
     print(f"ENABLE_COVERAGE_DIAGNOSTIC: {ENABLE_COVERAGE_DIAGNOSTIC}")
     print(f"COVERAGE_JSON_PATH: {COVERAGE_JSON_PATH}")
+    print(f"ENABLE_ZERO_RESULT_DEBUG: {ENABLE_ZERO_RESULT_DEBUG}")
+    print(f"ZERO_RESULT_DEBUG_DIR: {ZERO_RESULT_DEBUG_DIR}")
+    print(f"ZERO_RESULT_DEBUG_TARGETS: {ZERO_RESULT_DEBUG_TARGETS}")
+    print(f"PROGRAM_SELECTION_WAIT_MS: {PROGRAM_SELECTION_WAIT_MS}")
+    print(f"STATE_SELECTION_WAIT_MS: {STATE_SELECTION_WAIT_MS}")
+    print(f"PRE_SEARCH_WAIT_MS: {PRE_SEARCH_WAIT_MS}")
+    print(f"POST_SEARCH_WAIT_MS: {POST_SEARCH_WAIT_MS}")
 
     all_rows, coverage_summary = await run_scrape()
 
-    if not all_rows:
+    if not all_rows and not TEST_MODE:
         raise Exception("No rows scraped")
 
     print(f"Raw rows captured: {len(all_rows)}")
