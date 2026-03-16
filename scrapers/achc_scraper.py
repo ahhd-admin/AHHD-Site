@@ -41,6 +41,9 @@ TEST_MODE = os.getenv("TEST_MODE", "false").lower() == "true"
 TEST_PROGRAMS_ENV = os.getenv("TEST_PROGRAMS", "").strip()
 TRIGGER_STATE = os.getenv("TRIGGER_STATE", DEFAULT_TRIGGER_STATE).strip()
 
+# True = do not select a state at all
+NO_STATE_FILTER = os.getenv("NO_STATE_FILTER", "true").lower() == "true"
+
 ENABLE_COVERAGE_DIAGNOSTIC = os.getenv("ENABLE_COVERAGE_DIAGNOSTIC", "true").lower() == "true"
 COVERAGE_JSON_PATH = os.getenv("COVERAGE_JSON_PATH", "coverage_summary.json").strip()
 
@@ -156,6 +159,12 @@ def normalize_text(value: str) -> str:
 
 def safe_slug(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", value.strip().lower()).strip("-")
+
+
+def get_result_scope(trigger_state: str, no_state_filter: bool) -> str:
+    if no_state_filter:
+        return "National raw ACHC pull; no state selected"
+    return f"State-filtered ACHC pull; state = {trigger_state}"
 
 
 def split_city_state_zip(text: str) -> Tuple[str, str, str]:
@@ -321,16 +330,11 @@ async def wait_for_results(page):
     await page.wait_for_timeout(POST_SEARCH_WAIT_MS)
 
 
-async def count_detail_links(page) -> int:
-    detail_links = page.locator("a:has-text('Show/Hide Accreditation Details')")
-    return await detail_links.count()
-
-
 async def write_zero_result_debug_artifacts(
     page,
     program: str,
     trigger_state: str,
-    program_requested: str,
+    no_state_filter: bool,
     selected_program_before_search: Dict[str, str],
     selected_state_before_search: Dict[str, str],
     detail_links_found: int,
@@ -342,7 +346,7 @@ async def write_zero_result_debug_artifacts(
 
     timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
     program_slug = safe_slug(program)
-    state_slug = safe_slug(trigger_state)
+    state_slug = "no-state" if no_state_filter else safe_slug(trigger_state)
 
     screenshot_path = os.path.join(
         ZERO_RESULT_DEBUG_DIR,
@@ -365,8 +369,10 @@ async def write_zero_result_debug_artifacts(
 
     meta = {
         "generated_at_utc": datetime.utcnow().isoformat(),
-        "program_requested": program_requested,
-        "trigger_state_requested": trigger_state,
+        "program_requested": program,
+        "no_state_filter": no_state_filter,
+        "trigger_state_requested": "" if no_state_filter else trigger_state,
+        "result_scope": get_result_scope(trigger_state, no_state_filter),
         "selected_program_before_search": selected_program_before_search,
         "selected_state_before_search": selected_state_before_search,
         "detail_links_found": detail_links_found,
@@ -382,7 +388,7 @@ async def write_zero_result_debug_artifacts(
     print(f" Zero-result metadata written to: {meta_path}")
 
 
-async def scrape_raw_rows(page, searched_program: str, trigger_state: str) -> Tuple[List[dict], int]:
+async def scrape_raw_rows(page, searched_program: str, trigger_state: str, no_state_filter: bool) -> Tuple[List[dict], int]:
     rows = []
     detail_links = page.locator("a:has-text('Show/Hide Accreditation Details')")
     link_count = await detail_links.count()
@@ -417,9 +423,9 @@ async def scrape_raw_rows(page, searched_program: str, trigger_state: str) -> Tu
         cleaned_raw_text = raw_text.replace("Show/Hide Accreditation Details", "").strip()
         raw_name_line, raw_address_block, parsed_state_abbr = parse_raw_block(cleaned_raw_text)
 
-        matches_trigger_state = (
-            parsed_state_abbr == trigger_state_abbr if parsed_state_abbr and trigger_state_abbr else False
-        )
+        matches_trigger_state = False
+        if not no_state_filter and parsed_state_abbr and trigger_state_abbr:
+            matches_trigger_state = parsed_state_abbr == trigger_state_abbr
 
         detected_program_mentions = detect_program_mentions(cleaned_raw_text)
 
@@ -428,8 +434,8 @@ async def scrape_raw_rows(page, searched_program: str, trigger_state: str) -> Tu
                 "raw_index": i + 1,
                 "container_type": container_type,
                 "searched_program_type": searched_program,
-                "search_trigger_state": trigger_state,
-                "result_scope": f"Multi-state raw ACHC pull; trigger state = {trigger_state}",
+                "search_trigger_state": "" if no_state_filter else trigger_state,
+                "result_scope": get_result_scope(trigger_state, no_state_filter),
                 "raw_name_line": raw_name_line,
                 "raw_address_block": raw_address_block,
                 "parsed_state_abbr": parsed_state_abbr,
@@ -465,8 +471,9 @@ async def select_dropdown_with_verification(select_locator, label: str, wait_ms:
     }
 
 
-async def scrape_program(page, program: str, trigger_state: str) -> Tuple[List[dict], dict]:
-    print(f"Fetching: {program} / trigger state {trigger_state}")
+async def scrape_program(page, program: str, trigger_state: str, no_state_filter: bool) -> Tuple[List[dict], dict]:
+    mode_label = "no state selected" if no_state_filter else f"trigger state {trigger_state}"
+    print(f"Fetching: {program} / {mode_label}")
 
     await page.goto(AMS_URL, timeout=60000)
     await page.wait_for_load_state("domcontentloaded")
@@ -490,12 +497,20 @@ async def scrape_program(page, program: str, trigger_state: str) -> Tuple[List[d
         "Program",
     )
 
-    state_selection_info = await select_dropdown_with_verification(
-        state_select,
-        trigger_state,
-        STATE_SELECTION_WAIT_MS,
-        "State",
-    )
+    state_selection_info = {
+        "before": {"value": "", "label": ""},
+        "after": {"value": "", "label": ""},
+    }
+
+    if no_state_filter:
+        print(" No state selected for this run")
+    else:
+        state_selection_info = await select_dropdown_with_verification(
+            state_select,
+            trigger_state,
+            STATE_SELECTION_WAIT_MS,
+            "State",
+        )
 
     selected_program_before_search = await get_selected_option_info(prog_select)
     selected_state_before_search = await get_selected_option_info(state_select)
@@ -513,14 +528,14 @@ async def scrape_program(page, program: str, trigger_state: str) -> Tuple[List[d
     await click_search(page)
     await wait_for_results(page)
 
-    rows, detail_link_count = await scrape_raw_rows(page, program, trigger_state)
+    rows, detail_link_count = await scrape_raw_rows(page, program, trigger_state, no_state_filter)
 
     if detail_link_count == 0 and program in ZERO_RESULT_DEBUG_TARGETS:
         await write_zero_result_debug_artifacts(
             page=page,
             program=program,
             trigger_state=trigger_state,
-            program_requested=program,
+            no_state_filter=no_state_filter,
             selected_program_before_search=selected_program_before_search,
             selected_state_before_search=selected_state_before_search,
             detail_links_found=detail_link_count,
@@ -540,6 +555,8 @@ async def scrape_program(page, program: str, trigger_state: str) -> Tuple[List[d
     coverage = {
         "program_requested": program,
         "requested_program_unmapped": program not in EXPECTED_PROGRAMS,
+        "no_state_filter": no_state_filter,
+        "result_scope": get_result_scope(trigger_state, no_state_filter),
         "program_selection_before": program_selection_info["before"],
         "program_selection_after": program_selection_info["after"],
         "state_selection_before": state_selection_info["before"],
@@ -576,7 +593,7 @@ async def run_scrape() -> Tuple[List[dict], List[dict]]:
         page = await context.new_page()
 
         for program in PROGRAMS:
-            rows, coverage = await scrape_program(page, program, TRIGGER_STATE)
+            rows, coverage = await scrape_program(page, program, TRIGGER_STATE, NO_STATE_FILTER)
             all_rows.extend(rows)
             coverage_summary.append(coverage)
 
@@ -606,6 +623,7 @@ def print_coverage_report(coverage_summary: List[dict], all_rows: List[dict]):
 
     print("-" * 80)
     print(f"Programs requested: {PROGRAMS}")
+    print(f"NO_STATE_FILTER: {NO_STATE_FILTER}")
     print(f"Programs with zero parsed rows: {missing_programs}")
     print(f"Requested program labels not in canonical list: {requested_unmapped}")
     print(f"Possible unmapped discovered labels: {discovered_unmapped}")
@@ -615,7 +633,8 @@ def print_coverage_report(coverage_summary: List[dict], all_rows: List[dict]):
     if ENABLE_COVERAGE_DIAGNOSTIC:
         payload = {
             "generated_at_utc": datetime.utcnow().isoformat(),
-            "trigger_state": TRIGGER_STATE,
+            "no_state_filter": NO_STATE_FILTER,
+            "trigger_state": "" if NO_STATE_FILTER else TRIGGER_STATE,
             "limit_locations": LIMIT_LOCATIONS,
             "programs_requested": PROGRAMS,
             "programs_with_zero_rows": missing_programs,
@@ -658,6 +677,7 @@ async def main():
     print(f"TEST_MODE: {TEST_MODE}")
     print(f"PROGRAMS: {PROGRAMS}")
     print(f"TRIGGER_STATE: {TRIGGER_STATE}")
+    print(f"NO_STATE_FILTER: {NO_STATE_FILTER}")
     print(f"LIMIT_LOCATIONS: {LIMIT_LOCATIONS}")
     print(f"ENABLE_COVERAGE_DIAGNOSTIC: {ENABLE_COVERAGE_DIAGNOSTIC}")
     print(f"COVERAGE_JSON_PATH: {COVERAGE_JSON_PATH}")
@@ -686,6 +706,7 @@ async def main():
                 "matches_trigger_state": row["matches_trigger_state"],
                 "detected_program_mentions": row["detected_program_mentions"],
                 "raw_name_line": row["raw_name_line"],
+                "result_scope": row["result_scope"],
             }
         )
 
