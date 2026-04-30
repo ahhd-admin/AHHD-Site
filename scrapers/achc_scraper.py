@@ -3,6 +3,7 @@ import json
 import os
 import random
 import re
+import time
 from datetime import datetime
 from typing import Dict, List, Set, Tuple
 
@@ -650,11 +651,12 @@ def print_coverage_report(coverage_summary: List[dict], all_rows: List[dict]):
         print(f"Coverage JSON written to: {COVERAGE_JSON_PATH}")
 
 
-async def write_to_google_sheets(raw_rows: List[dict]):
+async def write_to_google_sheets(raw_rows: List[dict], run_metadata: dict):
     payload = {
         "action": "replace_raw_only",
         "test_mode": TEST_MODE,
         "raw_rows": raw_rows,
+        "run_metadata": run_metadata,
     }
 
     async with aiohttp.ClientSession() as session:
@@ -689,7 +691,37 @@ async def main():
     print(f"PRE_SEARCH_WAIT_MS: {PRE_SEARCH_WAIT_MS}")
     print(f"POST_SEARCH_WAIT_MS: {POST_SEARCH_WAIT_MS}")
 
+    scrape_start_time = time.time()
+    scrape_start_dt = datetime.utcnow()
+
     all_rows, coverage_summary = await run_scrape()
+
+    scrape_end_time = time.time()
+    scrape_end_dt = datetime.utcnow()
+    duration_seconds = int(scrape_end_time - scrape_start_time)
+    duration_minutes = duration_seconds // 60
+    duration_remaining_seconds = duration_seconds % 60
+    duration_human = f"{duration_minutes} minutes {duration_remaining_seconds} seconds"
+
+    programs_with_zero_rows = [c["program_requested"] for c in coverage_summary if c["rows_parsed"] == 0]
+
+    run_metadata = {
+        "run_id": f"run_{scrape_start_dt.strftime('%Y%m%dT%H%M%SZ')}",
+        "started_at_utc": scrape_start_dt.isoformat(),
+        "completed_at_utc": scrape_end_dt.isoformat(),
+        "duration_seconds": duration_seconds,
+        "duration_human": duration_human,
+        "total_rows_captured": len(all_rows),
+        "programs_scraped": PROGRAMS,
+        "programs_with_zero_rows": programs_with_zero_rows,
+        "limit_locations": LIMIT_LOCATIONS,
+        "no_state_filter": NO_STATE_FILTER,
+        "trigger_state": "" if NO_STATE_FILTER else TRIGGER_STATE,
+        "test_mode": TEST_MODE,
+        "scrape_status": "complete",
+    }
+
+    print(f"Scrape duration: {duration_human}")
 
     if not all_rows and not TEST_MODE:
         raise Exception("No rows scraped")
@@ -712,9 +744,9 @@ async def main():
 
     print_coverage_report(coverage_summary, all_rows)
 
-    await write_to_google_sheets(all_rows)
+    await write_to_google_sheets(all_rows, run_metadata)
     print("Raw data written to Google Sheets")
-    print("Raw-only test completed successfully")
+    print(f"Run complete: {run_metadata['run_id']} — {duration_human} — {len(all_rows)} rows")
 
 
 if __name__ == "__main__":

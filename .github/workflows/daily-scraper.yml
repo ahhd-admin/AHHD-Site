@@ -2,7 +2,8 @@ name: Daily Healthcare Provider Scraper
 
 on:
   schedule:
-    - cron: '02 8 * * *'
+    # 6:00 AM UTC = midnight Central (CST) / 1:00 AM Central (CDT)
+    - cron: '0 6 * * *'
   workflow_dispatch:
 
 jobs:
@@ -32,3 +33,12 @@ jobs:
           LIMIT_LOCATIONS: 0
         run: |
           python run_scraper_and_merge.py
+
+      - name: Notify on failure
+        if: failure()
+        env:
+          GOOGLE_SHEETS_WEB_APP_URL: ${{ secrets.GOOGLE_SHEETS_WEB_APP_URL }}
+        run: |
+          curl -s -X POST "$GOOGLE_SHEETS_WEB_APP_URL" \
+            -H "Content-Type: application/json" \
+            -d "{\"action\": \"notify_failure\", \"run_id\": \"run_$(date -u +%Y%m%dT%H%M%SZ)\", \"github_run_id\": \"${{ github.run_id }}\", \"workflow\": \"${{ github.workflow }}\"}"

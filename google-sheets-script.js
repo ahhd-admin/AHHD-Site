@@ -1,3 +1,5 @@
+// Deploy: clasp push && clasp deploy --deploymentId AKfycbz9AC_PgqENlgWyuc_LmNDCCvPYXafwqeRGeBsLUdEzLQ1e_aK3r5DuOLbpIGKsHzhUYQ
+
 function doGet(e) {
   return ContentService
     .createTextOutput(JSON.stringify({
@@ -54,6 +56,10 @@ function doPost(e) {
         rawSheet.getRange(2, 1, rawValues.length, rawHeaders.length).setValues(rawValues);
       }
 
+      const metadata = payload.run_metadata || {};
+      writeRunLog_(ss, metadata, "success", rawRows.length, testMode);
+      sendCompletionEmail_(metadata, rawRows.length, testMode);
+
       return jsonResponse_({
         ok: true,
         action: "replace_raw_only",
@@ -61,6 +67,18 @@ function doPost(e) {
         raw_rows_received: rawRows.length,
         raw_sheet_name: rawSheetName
       });
+    }
+
+    if (action === "notify_failure") {
+      const failureInfo = {
+        run_id: payload.run_id || "unknown",
+        github_run_id: payload.github_run_id || "",
+        workflow: payload.workflow || "Daily Healthcare Provider Scraper",
+        failed_at_utc: new Date().toISOString()
+      };
+      writeRunLog_(ss, failureInfo, "failed", 0, false);
+      sendFailureEmail_(failureInfo);
+      return jsonResponse_({ ok: true, action: "notify_failure" });
     }
 
     return jsonResponse_({
@@ -112,4 +130,103 @@ function jsonResponse_(obj) {
   return ContentService
     .createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+function writeRunLog_(ss, metadata, status, rowCount, testMode) {
+  const logHeaders = [
+    "run_id", "started_at_utc", "completed_at_utc", "duration_human",
+    "duration_seconds", "total_rows_captured", "programs_scraped",
+    "programs_with_zero_rows", "limit_locations", "no_state_filter",
+    "trigger_state", "test_mode", "status"
+  ];
+
+  let logSheet = ss.getSheetByName("Run_Log");
+  if (!logSheet) logSheet = ss.insertSheet("Run_Log");
+  ensureHeaders_(logSheet, logHeaders);
+
+  const programsScraped = Array.isArray(metadata.programs_scraped)
+    ? metadata.programs_scraped.join(", ")
+    : (metadata.programs_scraped || "");
+
+  const programsWithZero = Array.isArray(metadata.programs_with_zero_rows)
+    ? metadata.programs_with_zero_rows.join(", ")
+    : (metadata.programs_with_zero_rows || "");
+
+  const row = [
+    metadata.run_id || "",
+    metadata.started_at_utc || metadata.failed_at_utc || "",
+    metadata.completed_at_utc || "",
+    metadata.duration_human || "",
+    metadata.duration_seconds || "",
+    rowCount,
+    programsScraped,
+    programsWithZero,
+    metadata.limit_locations !== undefined ? metadata.limit_locations : "",
+    metadata.no_state_filter !== undefined ? metadata.no_state_filter : "",
+    metadata.trigger_state || "",
+    testMode,
+    status
+  ];
+
+  logSheet.appendRow(row);
+}
+
+function sendCompletionEmail_(metadata, rowCount, testMode) {
+  const recipient = "jay@jayfox.design";
+  const runId = metadata.run_id || "unknown";
+  const duration = metadata.duration_human || "unknown duration";
+  const startedAt = metadata.started_at_utc || "";
+  const completedAt = metadata.completed_at_utc || "";
+  const programsWithZero = Array.isArray(metadata.programs_with_zero_rows) && metadata.programs_with_zero_rows.length > 0
+    ? metadata.programs_with_zero_rows.join(", ")
+    : "none";
+  const modeLabel = testMode ? " [TEST MODE]" : "";
+
+  const subject = `ACHC Scrape Complete${modeLabel} — ${rowCount} rows in ${duration}`;
+
+  const body = [
+    `Run ID: ${runId}`,
+    `Started:   ${startedAt} UTC`,
+    `Completed: ${completedAt} UTC`,
+    `Duration:  ${duration}`,
+    ``,
+    `Programs scraped: ${Array.isArray(metadata.programs_scraped) ? metadata.programs_scraped.length : "unknown"}`,
+    `Total rows captured: ${rowCount}`,
+    `Programs with zero results: ${programsWithZero}`,
+    ``,
+    testMode ? "Note: This was a TEST MODE run — data written to Raw_ACHC_Test tab." : "Data written to Raw_ACHC tab.",
+    ``,
+    `View Google Sheets: https://docs.google.com/spreadsheets/d/${SpreadsheetApp.getActiveSpreadsheet().getId()}`
+  ].join("\n");
+
+  try {
+    MailApp.sendEmail(recipient, subject, body);
+  } catch (emailErr) {
+    console.error("sendCompletionEmail_ failed: " + String(emailErr));
+  }
+}
+
+function sendFailureEmail_(failureInfo) {
+  const recipient = "jay@jayfox.design";
+  const subject = "ACHC Scrape FAILED — Manual review needed";
+
+  const body = [
+    `The scheduled ACHC scraper failed.`,
+    ``,
+    `Run ID: ${failureInfo.run_id || "unknown"}`,
+    `GitHub Run ID: ${failureInfo.github_run_id || "unknown"}`,
+    `Workflow: ${failureInfo.workflow || "Daily Healthcare Provider Scraper"}`,
+    `Failed at: ${failureInfo.failed_at_utc} UTC`,
+    ``,
+    `The last known-good data is preserved in Google Sheets.`,
+    `Check the GitHub Actions logs for the full error.`,
+    ``,
+    `View Google Sheets: https://docs.google.com/spreadsheets/d/${SpreadsheetApp.getActiveSpreadsheet().getId()}`
+  ].join("\n");
+
+  try {
+    MailApp.sendEmail(recipient, subject, body);
+  } catch (emailErr) {
+    console.error("sendFailureEmail_ failed: " + String(emailErr));
+  }
 }
