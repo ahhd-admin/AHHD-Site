@@ -57,14 +57,25 @@ function doPost(e) {
       }
 
       const metadata = payload.run_metadata || {};
-      writeRunLog_(ss, metadata, "success", rawRows.length, testMode);
-      sendCompletionEmail_(metadata, rawRows.length, testMode);
+      const scrapeStatus = metadata.scrape_status || "complete";
+      const normalizedRows = Array.isArray(payload.normalized_rows) ? payload.normalized_rows : [];
+
+      if (scrapeStatus === "incomplete_scrape") {
+        writeRunLog_(ss, metadata, "incomplete_scrape", rawRows.length, testMode);
+        sendIncompleteScapeEmail_(metadata, rawRows.length, testMode);
+      } else {
+        mergeNormalizedRows_(ss, normalizedRows, testMode);
+        writeRunLog_(ss, metadata, "success", rawRows.length, testMode);
+        sendCompletionEmail_(metadata, rawRows.length, testMode);
+      }
 
       return jsonResponse_({
         ok: true,
         action: "replace_raw_only",
         test_mode: testMode,
         raw_rows_received: rawRows.length,
+        normalized_rows_received: normalizedRows.length,
+        scrape_status: scrapeStatus,
         raw_sheet_name: rawSheetName
       });
     }
@@ -228,5 +239,134 @@ function sendFailureEmail_(failureInfo) {
     MailApp.sendEmail(recipient, subject, body);
   } catch (emailErr) {
     console.error("sendFailureEmail_ failed: " + String(emailErr));
+  }
+}
+
+function mergeNormalizedRows_(ss, normalizedRows, testMode) {
+  const sheetName = testMode ? "Normalized_ACHC_Test" : "Normalized_ACHC";
+  let sheet = ss.getSheetByName(sheetName);
+  if (!sheet) sheet = ss.insertSheet(sheetName);
+
+  const headers = [
+    "provider_key", "provider_name", "street_address", "city", "state",
+    "zip", "phone", "services", "accrediting_body", "source_url",
+    "last_seen", "last_verified_at", "confidence_status",
+    "searched_program_type", "result_scope"
+  ];
+  ensureHeaders_(sheet, headers);
+
+  if (normalizedRows.length === 0) return;
+
+  const now = new Date().toISOString();
+  const lastRow = sheet.getLastRow();
+
+  // Build index of existing rows: provider_key -> row number (1-based)
+  const keyIndex = {};
+  if (lastRow > 1) {
+    const keyCol = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    keyCol.forEach((r, i) => {
+      if (r[0]) keyIndex[r[0]] = i + 2;
+    });
+  }
+
+  const incomingKeys = new Set(normalizedRows.map(r => r.provider_key));
+
+  // Process incoming rows
+  const newRows = [];
+  normalizedRows.forEach(row => {
+    const key = row.provider_key;
+    const services = Array.isArray(row.services) ? row.services.join(", ") : (row.services || "");
+    const rowValues = [
+      key,
+      row.provider_name || "",
+      row.street_address || "",
+      row.city || "",
+      row.state || "",
+      row.zip || "",
+      row.phone || "",
+      services,
+      row.accrediting_body || "ACHC",
+      row.source_url || "",
+      row.last_seen || "",
+      now,
+      row.confidence_status || "verified",
+      row.searched_program_type || "",
+      row.result_scope || ""
+    ];
+
+    if (keyIndex[key]) {
+      // Existing row — update in place
+      const rowNum = keyIndex[key];
+      const existing = sheet.getRange(rowNum, 1, 1, headers.length).getValues()[0];
+      const existingServices = existing[7] || "";
+      const hasChanged = existing[1] !== rowValues[1] ||
+                         existing[2] !== rowValues[2] ||
+                         existing[3] !== rowValues[3] ||
+                         existing[4] !== rowValues[4] ||
+                         existing[5] !== rowValues[5];
+
+      if (hasChanged) {
+        rowValues[12] = "changed";
+      } else {
+        rowValues[12] = existing[12] === "possibly_inactive" ? "verified" : existing[12];
+      }
+      // Merge services (union)
+      const existingSet = new Set(existingServices.split(",").map(s => s.trim()).filter(Boolean));
+      const incomingSet = new Set(services.split(",").map(s => s.trim()).filter(Boolean));
+      const mergedServices = [...new Set([...existingSet, ...incomingSet])].join(", ");
+      rowValues[7] = mergedServices;
+
+      sheet.getRange(rowNum, 1, 1, headers.length).setValues([rowValues]);
+    } else {
+      newRows.push(rowValues);
+    }
+  });
+
+  // Append new rows
+  if (newRows.length > 0) {
+    sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, headers.length).setValues(newRows);
+  }
+
+  // Mark rows not in this pull as possibly_inactive
+  if (lastRow > 1) {
+    const statusColIndex = headers.indexOf("confidence_status") + 1;
+    Object.entries(keyIndex).forEach(([key, rowNum]) => {
+      if (!incomingKeys.has(key)) {
+        sheet.getRange(rowNum, statusColIndex).setValue("possibly_inactive");
+      }
+    });
+  }
+}
+
+function sendIncompleteScapeEmail_(metadata, rowCount, testMode) {
+  const recipient = "jay@jayfox.design";
+  const runId = metadata.run_id || "unknown";
+  const duration = metadata.duration_human || "unknown duration";
+  const zeroPrograms = Array.isArray(metadata.programs_with_zero_rows)
+    ? metadata.programs_with_zero_rows.join(", ")
+    : "unknown";
+  const modeLabel = testMode ? " [TEST MODE]" : "";
+
+  const subject = `ACHC Scrape WARNING${modeLabel} — Incomplete results, normalized merge skipped`;
+
+  const body = [
+    `The ACHC scraper completed but returned incomplete results.`,
+    `The normalized merge was skipped to protect existing data.`,
+    ``,
+    `Run ID: ${runId}`,
+    `Duration: ${duration}`,
+    `Raw rows captured: ${rowCount}`,
+    `Programs with zero results: ${zeroPrograms}`,
+    ``,
+    `Action required: Review the Raw_ACHC tab and check the source site.`,
+    `The previous normalized dataset remains unchanged.`,
+    ``,
+    `View Google Sheets: https://docs.google.com/spreadsheets/d/${SpreadsheetApp.getActiveSpreadsheet().getId()}`
+  ].join("\n");
+
+  try {
+    MailApp.sendEmail(recipient, subject, body);
+  } catch (emailErr) {
+    console.error("sendIncompleteScapeEmail_ failed: " + String(emailErr));
   }
 }

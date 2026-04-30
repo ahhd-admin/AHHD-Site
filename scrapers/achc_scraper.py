@@ -244,6 +244,58 @@ def summarize_unmapped_mentions(rows: List[dict]) -> List[str]:
     return sorted(candidates)
 
 
+def normalize_row(row: dict) -> dict:
+    raw_text = row.get("raw_text", "") or ""
+    raw_name_line = row.get("raw_name_line", "") or ""
+    raw_address_block = row.get("raw_address_block", "") or ""
+    parsed_state_abbr = row.get("parsed_state_abbr", "") or ""
+
+    # Extract city and ZIP from raw_text (find "City, ST ZIP" line)
+    city, zip_code = "", ""
+    city_zip_match = re.search(
+        r'(.+),\s*[A-Z]{2}\s+(\d{5}(?:-\d{4})?)',
+        raw_text,
+        re.MULTILINE,
+    )
+    if city_zip_match:
+        city_candidate, zip_code = city_zip_match.group(1).strip(), city_zip_match.group(2).strip()
+        # Validate: shouldn't be a full address line (no digits at start)
+        if not re.match(r'^\d', city_candidate):
+            city = city_candidate
+
+    # Extract phone from raw_text
+    phone_match = re.search(r'\(?\d{3}\)?[\s.\-]\d{3}[\s.\-]\d{4}', raw_text)
+    phone = phone_match.group(0).strip() if phone_match else ""
+
+    # Services as list
+    detected = row.get("detected_program_mentions", "") or ""
+    services = [s.strip() for s in detected.split(",") if s.strip()]
+
+    provider_name = raw_name_line.strip()
+    provider_key = safe_slug(provider_name) + "_" + parsed_state_abbr if parsed_state_abbr else safe_slug(provider_name)
+
+    return {
+        "provider_key": provider_key,
+        "provider_name": provider_name,
+        "street_address": raw_address_block,
+        "city": city,
+        "state": parsed_state_abbr,
+        "zip": zip_code,
+        "phone": phone,
+        "services": services,
+        "accrediting_body": "ACHC",
+        "source_url": row.get("source_url", ""),
+        "last_seen": row.get("last_seen", ""),
+        "confidence_status": "verified",
+        "searched_program_type": row.get("searched_program_type", ""),
+        "result_scope": row.get("result_scope", ""),
+    }
+
+
+def normalize_rows(raw_rows: List[dict]) -> List[dict]:
+    return [normalize_row(r) for r in raw_rows]
+
+
 async def find_select_with_programs(page):
     selects = page.locator("select")
     for i in range(await selects.count()):
@@ -651,11 +703,12 @@ def print_coverage_report(coverage_summary: List[dict], all_rows: List[dict]):
         print(f"Coverage JSON written to: {COVERAGE_JSON_PATH}")
 
 
-async def write_to_google_sheets(raw_rows: List[dict], run_metadata: dict):
+async def write_to_google_sheets(raw_rows: List[dict], normalized_rows: List[dict], run_metadata: dict):
     payload = {
         "action": "replace_raw_only",
         "test_mode": TEST_MODE,
         "raw_rows": raw_rows,
+        "normalized_rows": normalized_rows,
         "run_metadata": run_metadata,
     }
 
@@ -704,6 +757,10 @@ async def main():
     duration_human = f"{duration_minutes} minutes {duration_remaining_seconds} seconds"
 
     programs_with_zero_rows = [c["program_requested"] for c in coverage_summary if c["rows_parsed"] == 0]
+    scrape_status = "incomplete_scrape" if len(programs_with_zero_rows) > 2 else "complete"
+
+    if scrape_status == "incomplete_scrape":
+        print(f"WARNING: {len(programs_with_zero_rows)} programs returned 0 rows — marking as incomplete_scrape")
 
     run_metadata = {
         "run_id": f"run_{scrape_start_dt.strftime('%Y%m%dT%H%M%SZ')}",
@@ -718,10 +775,11 @@ async def main():
         "no_state_filter": NO_STATE_FILTER,
         "trigger_state": "" if NO_STATE_FILTER else TRIGGER_STATE,
         "test_mode": TEST_MODE,
-        "scrape_status": "complete",
+        "scrape_status": scrape_status,
     }
 
     print(f"Scrape duration: {duration_human}")
+    print(f"Scrape status: {scrape_status}")
 
     if not all_rows and not TEST_MODE:
         raise Exception("No rows scraped")
@@ -744,9 +802,12 @@ async def main():
 
     print_coverage_report(coverage_summary, all_rows)
 
-    await write_to_google_sheets(all_rows, run_metadata)
-    print("Raw data written to Google Sheets")
-    print(f"Run complete: {run_metadata['run_id']} — {duration_human} — {len(all_rows)} rows")
+    normalized = normalize_rows(all_rows)
+    print(f"Normalized rows: {len(normalized)}")
+
+    await write_to_google_sheets(all_rows, normalized, run_metadata)
+    print("Raw and normalized data written to Google Sheets")
+    print(f"Run complete: {run_metadata['run_id']} — {duration_human} — {len(all_rows)} rows — status: {scrape_status}")
 
 
 if __name__ == "__main__":
