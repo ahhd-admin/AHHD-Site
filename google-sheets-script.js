@@ -1,6 +1,28 @@
 // Deploy: clasp push && clasp deploy --deploymentId AKfycbz9AC_PgqENlgWyuc_LmNDCCvPYXafwqeRGeBsLUdEzLQ1e_aK3r5DuOLbpIGKsHzhUYQ
 
 function doGet(e) {
+  const action = e && e.parameter && e.parameter.action;
+
+  if (action === "get_normalized") {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName("Normalized_ACHC");
+    if (!sheet || sheet.getLastRow() < 2) {
+      return ContentService
+        .createTextOutput(JSON.stringify([]))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getValues();
+    const data = rows.map(row => {
+      const obj = {};
+      headers.forEach((h, i) => { obj[h] = row[i]; });
+      return obj;
+    });
+    return ContentService
+      .createTextOutput(JSON.stringify(data))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
   return ContentService
     .createTextOutput(JSON.stringify({
       ok: true,
@@ -21,6 +43,15 @@ function doPost(e) {
     }
 
     const payload = JSON.parse(e.postData.contents);
+
+    // Verify shared secret
+    const expectedSecret = PropertiesService.getScriptProperties().getProperty('ACHC_SCRAPER_SECRET');
+    if (expectedSecret) {
+      if (!payload.secret || payload.secret !== expectedSecret) {
+        return jsonResponse_({ ok: false, error: "Unauthorized" });
+      }
+    }
+
     const action = payload.action || "replace_raw_only";
     const testMode = payload.test_mode === true;
 
@@ -251,7 +282,7 @@ function mergeNormalizedRows_(ss, normalizedRows, testMode) {
     "provider_key", "provider_name", "street_address", "city", "state",
     "zip", "phone", "services", "accrediting_body", "source_url",
     "last_seen", "last_verified_at", "confidence_status",
-    "searched_program_type", "result_scope"
+    "searched_program_type", "result_scope", "latitude", "longitude"
   ];
   ensureHeaders_(sheet, headers);
 
@@ -291,7 +322,9 @@ function mergeNormalizedRows_(ss, normalizedRows, testMode) {
       now,
       row.confidence_status || "verified",
       row.searched_program_type || "",
-      row.result_scope || ""
+      row.result_scope || "",
+      row.latitude !== undefined && row.latitude !== null ? row.latitude : "",
+      row.longitude !== undefined && row.longitude !== null ? row.longitude : ""
     ];
 
     if (keyIndex[key]) {
@@ -315,6 +348,10 @@ function mergeNormalizedRows_(ss, normalizedRows, testMode) {
       const incomingSet = new Set(services.split(",").map(s => s.trim()).filter(Boolean));
       const mergedServices = [...new Set([...existingSet, ...incomingSet])].join(", ");
       rowValues[7] = mergedServices;
+
+      // Preserve existing lat/lon if new value is blank
+      if (!rowValues[15] && existing[15]) rowValues[15] = existing[15];
+      if (!rowValues[16] && existing[16]) rowValues[16] = existing[16];
 
       sheet.getRange(rowNum, 1, 1, headers.length).setValues([rowValues]);
     } else {

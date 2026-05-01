@@ -7,17 +7,23 @@ const corsHeaders = {
 };
 
 interface SheetRow {
-  organization: string;
-  program: string;
-  address: string;
+  provider_key: string;
+  provider_name: string;
+  street_address: string;
   city: string;
   state: string;
   zip: string;
   phone: string;
-  latitude: string | number;
-  longitude: string | number;
+  services: string;
+  accrediting_body: string;
   source_url: string;
   last_seen: string;
+  last_verified_at: string;
+  confidence_status: string;
+  searched_program_type: string;
+  result_scope: string;
+  latitude?: string | number;
+  longitude?: string | number;
 }
 
 Deno.serve(async (req: Request) => {
@@ -40,14 +46,15 @@ Deno.serve(async (req: Request) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     console.log('Fetching data from Google Sheets...');
-    const sheetsResponse = await fetch(googleSheetsUrl);
+    const sheetsResponse = await fetch(`${googleSheetsUrl}?action=get_normalized`);
 
     if (!sheetsResponse.ok) {
       throw new Error(`Failed to fetch from Google Sheets: ${sheetsResponse.statusText}`);
     }
 
-    const sheetData: SheetRow[] = await sheetsResponse.json();
-    console.log(`Retrieved ${sheetData.length} rows from Google Sheets`);
+    const rawData: SheetRow[] = await sheetsResponse.json();
+    const sheetData: SheetRow[] = rawData.filter(row => row.confidence_status !== "incomplete_scrape");
+    console.log(`Retrieved ${rawData.length} rows from Google Sheets, ${sheetData.length} eligible for sync (excluding incomplete_scrape)`);
 
     if (sheetData.length === 0) {
       return new Response(

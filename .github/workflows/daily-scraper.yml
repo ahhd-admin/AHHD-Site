@@ -31,14 +31,31 @@ jobs:
         env:
           GOOGLE_SHEETS_WEB_APP_URL: ${{ secrets.GOOGLE_SHEETS_WEB_APP_URL }}
           LIMIT_LOCATIONS: 0
+          SCRAPER_SECRET: ${{ secrets.SCRAPER_SECRET }}
         run: |
           python run_scraper_and_merge.py
+
+      - name: Trigger Supabase sync
+        if: success()
+        env:
+          SUPABASE_SYNC_URL: ${{ secrets.SUPABASE_SYNC_URL }}
+        run: |
+          if [ -n "$SUPABASE_SYNC_URL" ]; then
+            curl -s -X POST "$SUPABASE_SYNC_URL" \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
+              -d "{}" \
+              --fail-with-body || echo "Supabase sync failed (non-blocking)"
+          else
+            echo "SUPABASE_SYNC_URL not configured, skipping Supabase sync"
+          fi
 
       - name: Notify on failure
         if: failure()
         env:
           GOOGLE_SHEETS_WEB_APP_URL: ${{ secrets.GOOGLE_SHEETS_WEB_APP_URL }}
+          SCRAPER_SECRET: ${{ secrets.SCRAPER_SECRET }}
         run: |
           curl -s -X POST "$GOOGLE_SHEETS_WEB_APP_URL" \
             -H "Content-Type: application/json" \
-            -d "{\"action\": \"notify_failure\", \"run_id\": \"run_$(date -u +%Y%m%dT%H%M%SZ)\", \"github_run_id\": \"${{ github.run_id }}\", \"workflow\": \"${{ github.workflow }}\"}"
+            -d "{\"action\": \"notify_failure\", \"secret\": \"$SCRAPER_SECRET\", \"run_id\": \"run_$(date -u +%Y%m%dT%H%M%SZ)\", \"github_run_id\": \"${{ github.run_id }}\", \"workflow\": \"${{ github.workflow }}\"}"

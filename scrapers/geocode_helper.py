@@ -20,8 +20,8 @@ def save_cache(cache: dict):
         json.dump(cache, f, indent=2)
 
 
-def address_key(address: str, city: str, state: str, postal_code: str) -> str:
-    return f"{address.strip().lower()}|{city.strip().lower()}|{state.strip().upper()}|{postal_code.strip()}"
+def address_key(street_address: str, city: str, state: str, postal_code: str) -> str:
+    return f"{street_address.strip().lower()}|{city.strip().lower()}|{state.strip().upper()}|{postal_code.strip()}"
 
 
 async def geocode_address(session, address: str, city: str, state: str, postal_code: str) -> Tuple[Optional[float], Optional[float]]:
@@ -58,7 +58,7 @@ async def geocode_locations(locations: list) -> list:
     connector = aiohttp.TCPConnector(limit=1)
     async with aiohttp.ClientSession(connector=connector) as session:
         for i, loc in enumerate(locations, start=1):
-            key = address_key(loc["address"], loc["city"], loc["state"], loc["zip"])
+            key = address_key(loc.get("street_address", ""), loc["city"], loc["state"], loc["zip"])
 
             if key in cache:
                 loc["latitude"] = cache[key].get("latitude")
@@ -67,7 +67,7 @@ async def geocode_locations(locations: list) -> list:
 
             lat, lon = await geocode_address(
                 session,
-                loc["address"],
+                loc.get("street_address", ""),
                 loc["city"],
                 loc["state"],
                 loc["zip"]

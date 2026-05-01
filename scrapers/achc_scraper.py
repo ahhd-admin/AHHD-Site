@@ -9,6 +9,7 @@ from typing import Dict, List, Set, Tuple
 
 import aiohttp
 from dotenv import load_dotenv
+from geocode_helper import geocode_locations
 from playwright.async_api import async_playwright
 
 load_dotenv()
@@ -38,6 +39,7 @@ DEFAULT_TRIGGER_STATE = "Texas"
 LIMIT_LOCATIONS = int(os.getenv("LIMIT_LOCATIONS", "0"))
 
 GOOGLE_SHEETS_URL = os.getenv("GOOGLE_SHEETS_WEB_APP_URL")
+SCRAPER_SECRET = os.getenv("SCRAPER_SECRET", "")
 TEST_MODE = os.getenv("TEST_MODE", "false").lower() == "true"
 TEST_PROGRAMS_ENV = os.getenv("TEST_PROGRAMS", "").strip()
 TRIGGER_STATE = os.getenv("TRIGGER_STATE", DEFAULT_TRIGGER_STATE).strip()
@@ -707,6 +709,7 @@ async def write_to_google_sheets(raw_rows: List[dict], normalized_rows: List[dic
     payload = {
         "action": "replace_raw_only",
         "test_mode": TEST_MODE,
+        "secret": SCRAPER_SECRET,
         "raw_rows": raw_rows,
         "normalized_rows": normalized_rows,
         "run_metadata": run_metadata,
@@ -804,6 +807,9 @@ async def main():
 
     normalized = normalize_rows(all_rows)
     print(f"Normalized rows: {len(normalized)}")
+
+    normalized = await geocode_locations(normalized)
+    print(f"Geocoding complete")
 
     await write_to_google_sheets(all_rows, normalized, run_metadata)
     print("Raw and normalized data written to Google Sheets")
