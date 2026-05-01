@@ -1,4 +1,3 @@
-// Deploy: clasp push && clasp deploy --deploymentId AKfycbz9AC_PgqENlgWyuc_LmNDCCvPYXafwqeRGeBsLUdEzLQ1e_aK3r5DuOLbpIGKsHzhUYQ
 
 function doGet(e) {
   const action = e && e.parameter && e.parameter.action;
