@@ -30,7 +30,8 @@ jobs:
         working-directory: ./scrapers
         env:
           GOOGLE_SHEETS_WEB_APP_URL: ${{ secrets.GOOGLE_SHEETS_WEB_APP_URL }}
-          LIMIT_LOCATIONS: 0
+          LIMIT_LOCATIONS: 3
+          TEST_MODE=true
         run: |
           python run_scraper_and_merge.py
 
