@@ -26,6 +26,7 @@ jobs:
           pip install -r requirements.txt
           playwright install chromium
 
+      # Note: normalization logic is unit-tested separately in the test-normalization workflow
       - name: Run ACHC scraper and write raw + merged tabs
         working-directory: ./scrapers
         env:
@@ -33,6 +34,7 @@ jobs:
           LIMIT_LOCATIONS: 3
           TEST_MODE: "true"
           SCRAPER_SECRET: ${{ secrets.SCRAPER_SECRET }}
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
         run: |
           python run_scraper_and_merge.py
 

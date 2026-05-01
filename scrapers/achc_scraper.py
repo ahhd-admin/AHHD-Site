@@ -10,6 +10,7 @@ from typing import Dict, List, Set, Tuple
 import aiohttp
 from dotenv import load_dotenv
 from geocode_helper import geocode_locations
+from places_helper import enrich_websites
 from playwright.async_api import async_playwright
 
 load_dotenv()
@@ -252,6 +253,17 @@ def normalize_row(row: dict) -> dict:
     raw_address_block = row.get("raw_address_block", "") or ""
     parsed_state_abbr = row.get("parsed_state_abbr", "") or ""
 
+    # Split raw_address_block on " | " — parse_raw_block builds it as
+    # " | ".join(address_lines) where address_lines are all lines before
+    # the "City, ST ZIP" line.  Take the first non-empty segment as the
+    # canonical street address (e.g. "123 Main St") and discard any
+    # secondary lines (Suite, Attn, etc.) that may follow.
+    if " | " in raw_address_block:
+        parts = [p.strip() for p in raw_address_block.split(" | ") if p.strip()]
+        street_address = parts[0] if parts else ""
+    else:
+        street_address = raw_address_block.strip()
+
     # Extract city and ZIP from raw_text (find "City, ST ZIP" line)
     city, zip_code = "", ""
     city_zip_match = re.search(
@@ -269,7 +281,8 @@ def normalize_row(row: dict) -> dict:
     phone_match = re.search(r'\(?\d{3}\)?[\s.\-]\d{3}[\s.\-]\d{4}', raw_text)
     phone = phone_match.group(0).strip() if phone_match else ""
 
-    # Services as list
+    # Services as list — use detected_program_mentions (authoritative) not
+    # searched_program_type (which is just the search trigger).
     detected = row.get("detected_program_mentions", "") or ""
     services = [s.strip() for s in detected.split(",") if s.strip()]
 
@@ -279,11 +292,13 @@ def normalize_row(row: dict) -> dict:
     return {
         "provider_key": provider_key,
         "provider_name": provider_name,
-        "street_address": raw_address_block,
+        "dba_name": "",
+        "street_address": street_address,
         "city": city,
         "state": parsed_state_abbr,
         "zip": zip_code,
         "phone": phone,
+        "website": "",
         "services": services,
         "accrediting_body": "ACHC",
         "source_url": row.get("source_url", ""),
@@ -295,7 +310,30 @@ def normalize_row(row: dict) -> dict:
 
 
 def normalize_rows(raw_rows: List[dict]) -> List[dict]:
-    return [normalize_row(r) for r in raw_rows]
+    """Normalize all raw rows and deduplicate by provider_key.
+
+    When the same physical location appears in multiple program search results
+    its ``detected_program_mentions`` may differ between occurrences.  We keep
+    the first occurrence's non-service fields and merge the services lists from
+    all occurrences into a single sorted, deduplicated list.
+    """
+    seen: Dict[str, int] = {}   # provider_key -> index in result list
+    result: List[dict] = []
+
+    for raw_row in raw_rows:
+        normalized = normalize_row(raw_row)
+        key = normalized["provider_key"]
+
+        if key not in seen:
+            seen[key] = len(result)
+            result.append(normalized)
+        else:
+            # Merge services into the existing entry
+            existing = result[seen[key]]
+            merged_services = sorted(set(existing["services"]) | set(normalized["services"]))
+            existing["services"] = merged_services
+
+    return result
 
 
 async def find_select_with_programs(page):
@@ -810,6 +848,9 @@ async def main():
 
     normalized = await geocode_locations(normalized)
     print(f"Geocoding complete")
+
+    normalized = await enrich_websites(normalized)
+    print(f"Website enrichment complete")
 
     await write_to_google_sheets(all_rows, normalized, run_metadata)
     print("Raw and normalized data written to Google Sheets")
