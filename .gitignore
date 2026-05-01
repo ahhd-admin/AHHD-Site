@@ -1,0 +1,7 @@
+.env
+*.env
+geocode_cache.json
+places_cache.json
+coverage_summary.json
+debug_artifacts/
+structure_dump.json
