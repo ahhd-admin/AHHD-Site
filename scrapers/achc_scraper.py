@@ -1,4 +1,5 @@
 import asyncio
+import html as _html
 import json
 import os
 import random
@@ -11,9 +12,17 @@ import aiohttp
 from dotenv import load_dotenv
 from geocode_helper import geocode_locations
 from places_helper import enrich_websites
+from accreditation_helper import fetch_accreditation_services, merge_ajax_services
 from playwright.async_api import async_playwright
 
+try:
+    from bs4 import BeautifulSoup
+    _BS4_AVAILABLE = True
+except ImportError:
+    _BS4_AVAILABLE = False
+
 load_dotenv()
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'))
 
 AMS_URL = "https://ams.achc.org/accredited_organizations.aspx"
 
@@ -32,6 +41,12 @@ DEFAULT_PROGRAMS = [
     "Community Retail",
     "DMEPOS",
     "Pharmacy",
+    "Private Duty",
+    "Healthcare Staffing Services Certification",
+    "PCAB Compounding Pharmacy",
+    "Long-Term Care Dialysis Certification",
+    "Telehealth Certification",
+    "ACHC Inspection Services",
 ]
 
 DEFAULT_TRIGGER_STATE = "Texas"
@@ -47,6 +62,13 @@ TRIGGER_STATE = os.getenv("TRIGGER_STATE", DEFAULT_TRIGGER_STATE).strip()
 
 # True = do not select a state at all
 NO_STATE_FILTER = os.getenv("NO_STATE_FILTER", "true").lower() == "true"
+
+ENABLE_AJAX_ACCREDITATION = os.getenv("ENABLE_AJAX_ACCREDITATION", "true").lower() == "true"
+ENABLE_WEBSITE_ENRICHMENT = os.getenv("ENABLE_WEBSITE_ENRICHMENT", "true").lower() == "true"
+ENABLE_DIRECT_SUPABASE   = os.getenv("ENABLE_DIRECT_SUPABASE", "true").lower() == "true"
+
+SUPABASE_URL             = os.getenv("SUPABASE_URL", "")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 
 ENABLE_COVERAGE_DIAGNOSTIC = os.getenv("ENABLE_COVERAGE_DIAGNOSTIC", "true").lower() == "true"
 COVERAGE_JSON_PATH = os.getenv("COVERAGE_JSON_PATH", "coverage_summary.json").strip()
@@ -68,7 +90,14 @@ PROGRAMS = (
 )
 
 if not GOOGLE_SHEETS_URL:
-    raise ValueError("Missing GOOGLE_SHEETS_WEB_APP_URL in environment variables")
+    if not ENABLE_DIRECT_SUPABASE:
+        raise ValueError("Missing GOOGLE_SHEETS_WEB_APP_URL in environment variables")
+    else:
+        print("WARNING: GOOGLE_SHEETS_WEB_APP_URL is not set — Google Sheets writes will be skipped (ENABLE_DIRECT_SUPABASE is active)")
+
+CHECKPOINT_FILE = os.getenv("CHECKPOINT_FILE", "scrape_checkpoint.json")
+# Checkpoints older than this are ignored and a fresh scrape is run instead
+CHECKPOINT_MAX_AGE_HOURS = float(os.getenv("CHECKPOINT_MAX_AGE_HOURS", "24"))
 
 STATE_ABBR_MAP = {
     "Alabama": "AL",
@@ -150,6 +179,17 @@ CANONICAL_PROGRAM_MAP: Dict[str, str] = {
     "community retail": "Community Retail",
     "dmepos": "DMEPOS",
     "pharmacy": "Pharmacy",
+    "private duty": "Private Duty",
+    "healthcare staffing services certification": "Healthcare Staffing Services Certification",
+    "healthcare staffing": "Healthcare Staffing Services Certification",
+    "pcab compounding pharmacy": "PCAB Compounding Pharmacy",
+    "pcab compounding": "PCAB Compounding Pharmacy",
+    "long-term care dialysis certification": "Long-Term Care Dialysis Certification",
+    "long-term care dialysis": "Long-Term Care Dialysis Certification",
+    "telehealth certification": "Telehealth Certification",
+    "telehealth": "Telehealth Certification",
+    "achc inspection services": "ACHC Inspection Services",
+    "inspection services": "ACHC Inspection Services",
 }
 
 
@@ -182,7 +222,15 @@ def split_city_state_zip(text: str) -> Tuple[str, str, str]:
     return match.group(1), match.group(2), match.group(3)
 
 
+# ---------------------------------------------------------------------------
+# parse_raw_block — kept as a fallback; prefer parse_listing_html() instead.
+# ---------------------------------------------------------------------------
 def parse_raw_block(raw_text: str) -> Tuple[str, str, str]:
+    """Fallback parser: splits raw inner_text() by newlines and uses regex.
+
+    Returns (raw_name_line, raw_address_block, parsed_state_abbr).
+    Use parse_listing_html() when the first <td> innerHTML is available.
+    """
     if not raw_text:
         return "", "", ""
 
@@ -211,6 +259,206 @@ def parse_raw_block(raw_text: str) -> Tuple[str, str, str]:
     raw_address_block = " | ".join(address_lines)
     _, parsed_state_abbr, _ = split_city_state_zip(city_state_zip)
     return raw_name_line, raw_address_block, parsed_state_abbr
+
+
+# ---------------------------------------------------------------------------
+# parse_listing_html — preferred HTML-aware parser (T-010, T-012)
+# ---------------------------------------------------------------------------
+_CITY_STATE_ZIP_RE = re.compile(r"^(.*?),\s*([A-Z]{2})\s+(\d{5}(?:-\d{4})?)$")
+_DIV_TITLE_INFO_RE = re.compile(r"^divTitleInfo(\d+)$")
+_DBA_PREFIX_RE = re.compile(r"^d/b/a\s+", re.IGNORECASE)
+
+
+def _parse_listing_html_bs4(html: str) -> dict:
+    """Parse first-<td> innerHTML using BeautifulSoup."""
+    soup = BeautifulSoup(html, "html.parser")
+
+    # --- legal name ---
+    strong_tag = soup.find("strong")
+    legal_name = strong_tag.get_text(strip=True) if strong_tag else ""
+
+    # --- company ID from <div id="divTitleInfo{id}"> ---
+    achc_company_id = ""
+    div_tag = soup.find("div", id=_DIV_TITLE_INFO_RE)
+    if div_tag:
+        m = _DIV_TITLE_INFO_RE.match(div_tag.get("id", ""))
+        if m:
+            achc_company_id = m.group(1)
+
+    # --- walk children of the top-level element to collect text segments ---
+    # BeautifulSoup parses the fragment; its children are the top-level nodes.
+    # We treat the whole soup as the container and walk its direct children,
+    # collecting NavigableString text between <br> tags, stopping at the <div>.
+    text_segments = []
+    past_strong = False
+
+    # Use .children on the soup object (the parsed fragment's root).
+    # If bs4 wraps the content in a <html><body> tree we navigate down.
+    container = soup
+    # Try to find the immediate parent wrapping all content.
+    # For a fragment, soup itself acts as a document; iterate its descendants
+    # at the correct depth by walking the first meaningful parent.
+    body = soup.find("body")
+    if body:
+        container = body
+
+    for node in container.children:
+        node_name = getattr(node, "name", None)
+
+        # Stop collecting when we hit the divTitleInfo div
+        if node_name == "div":
+            div_id = node.get("id", "") if hasattr(node, "get") else ""
+            if _DIV_TITLE_INFO_RE.match(div_id):
+                break
+
+        # Skip <br> tags — they act as separators; text after them is already
+        # in a following NavigableString node
+        if node_name == "br":
+            continue
+
+        # The <strong> tag holds the legal name (already captured above)
+        if node_name == "strong":
+            past_strong = True
+            continue
+
+        # Collect NavigableString nodes that appear after the <strong>
+        if past_strong and node_name is None:
+            segment = str(node).strip()
+            if segment:
+                text_segments.append(segment)
+
+    # --- classify segments ---
+    dba_name = ""
+    address_lines = []
+    city = ""
+    state = ""
+    zip_code = ""
+
+    for seg in text_segments:
+        # Check city/state/zip first (most specific)
+        csz_match = _CITY_STATE_ZIP_RE.match(seg)
+        if csz_match:
+            city = csz_match.group(1).strip()
+            state = csz_match.group(2).strip()
+            zip_code = csz_match.group(3).strip()
+            continue
+
+        # DBA: first segment starting with d/b/a (case-insensitive)
+        if not dba_name and _DBA_PREFIX_RE.match(seg):
+            dba_name = _DBA_PREFIX_RE.sub("", seg).strip()
+            continue
+
+        # Everything else is a street address line
+        address_lines.append(seg)
+
+    street_address = ", ".join(address_lines)
+
+    return {
+        "legal_name": legal_name,
+        "dba_name": dba_name,
+        "street_address": street_address,
+        "city": city,
+        "state": state,
+        "zip": zip_code,
+        "achc_company_id": achc_company_id,
+    }
+
+
+def _parse_listing_html_regex(html: str) -> dict:
+    """Fallback parser for when BeautifulSoup is not installed.
+
+    Extracts fields from the first-<td> innerHTML using regex only.
+    """
+    # --- legal name ---
+    strong_match = re.search(
+        r'<strong[^>]*>\s*(.*?)\s*</strong>',
+        html,
+        re.IGNORECASE | re.DOTALL,
+    )
+    legal_name = strong_match.group(1).strip() if strong_match else ""
+
+    # --- company ID ---
+    achc_company_id = ""
+    div_id_match = re.search(r'id="divTitleInfo(\d+)"', html, re.IGNORECASE)
+    if div_id_match:
+        achc_company_id = div_id_match.group(1)
+
+    # --- extract text content between </strong> and the divTitleInfo <div> ---
+    # Grab the slice of HTML between </strong> and the divTitleInfo div opening.
+    body_slice = html
+    strong_end = re.search(r'</strong>', html, re.IGNORECASE)
+    if strong_end:
+        body_slice = html[strong_end.end():]
+
+    div_start = re.search(r'<div[^>]+id="divTitleInfo\d+"', body_slice, re.IGNORECASE)
+    if div_start:
+        body_slice = body_slice[:div_start.start()]
+
+    # Strip all remaining tags and split on <br> boundaries.
+    segments_raw = re.split(r'<br\s*/?>', body_slice, flags=re.IGNORECASE)
+    segments = []
+    for seg in segments_raw:
+        clean = re.sub(r'<[^>]+>', '', seg).strip()
+        clean = re.sub(r'\s+', ' ', clean).strip()
+        if clean:
+            segments.append(clean)
+
+    # --- classify segments ---
+    dba_name = ""
+    address_lines = []
+    city = ""
+    state = ""
+    zip_code = ""
+
+    for seg in segments:
+        csz_match = _CITY_STATE_ZIP_RE.match(seg)
+        if csz_match:
+            city = csz_match.group(1).strip()
+            state = csz_match.group(2).strip()
+            zip_code = csz_match.group(3).strip()
+            continue
+
+        if not dba_name and _DBA_PREFIX_RE.match(seg):
+            dba_name = _DBA_PREFIX_RE.sub("", seg).strip()
+            continue
+
+        address_lines.append(seg)
+
+    street_address = ", ".join(address_lines)
+
+    return {
+        "legal_name": legal_name,
+        "dba_name": dba_name,
+        "street_address": street_address,
+        "city": city,
+        "state": state,
+        "zip": zip_code,
+        "achc_company_id": achc_company_id,
+    }
+
+
+def parse_listing_html(html: str) -> dict:
+    """Parse the innerHTML of the first <td> in a provider listing row.
+
+    Returns a dict with keys:
+        legal_name, dba_name, street_address, city, state, zip, achc_company_id
+
+    Uses BeautifulSoup when available, falls back to regex otherwise.
+    """
+    if not html:
+        return {
+            "legal_name": "",
+            "dba_name": "",
+            "street_address": "",
+            "city": "",
+            "state": "",
+            "zip": "",
+            "achc_company_id": "",
+        }
+
+    if _BS4_AVAILABLE:
+        return _parse_listing_html_bs4(html)
+    return _parse_listing_html_regex(html)
 
 
 def detect_program_mentions(raw_text: str) -> List[str]:
@@ -252,6 +500,7 @@ def normalize_row(row: dict) -> dict:
     raw_name_line = row.get("raw_name_line", "") or ""
     raw_address_block = row.get("raw_address_block", "") or ""
     parsed_state_abbr = row.get("parsed_state_abbr", "") or ""
+    achc_company_id = row.get("achc_company_id", "") or ""
 
     # Split raw_address_block on " | " — parse_raw_block builds it as
     # " | ".join(address_lines) where address_lines are all lines before
@@ -264,18 +513,26 @@ def normalize_row(row: dict) -> dict:
     else:
         street_address = raw_address_block.strip()
 
-    # Extract city and ZIP from raw_text (find "City, ST ZIP" line)
-    city, zip_code = "", ""
-    city_zip_match = re.search(
-        r'(.+),\s*[A-Z]{2}\s+(\d{5}(?:-\d{4})?)',
-        raw_text,
-        re.MULTILINE,
-    )
-    if city_zip_match:
-        city_candidate, zip_code = city_zip_match.group(1).strip(), city_zip_match.group(2).strip()
-        # Validate: shouldn't be a full address line (no digits at start)
-        if not re.match(r'^\d', city_candidate):
-            city = city_candidate
+    # Prefer HTML-parsed city/zip from the row (new fields).
+    # Fall back to regex extraction from raw_text for backwards compatibility.
+    city = row.get("city", "") or ""
+    zip_code = row.get("zip", "") or ""
+
+    if not city or not zip_code:
+        city_zip_match = re.search(
+            r'(.+),\s*[A-Z]{2}\s+(\d{5}(?:-\d{4})?)',
+            raw_text,
+            re.MULTILINE,
+        )
+        if city_zip_match:
+            city_candidate = city_zip_match.group(1).strip()
+            zip_candidate = city_zip_match.group(2).strip()
+            # Validate: shouldn't be a full address line (no digits at start)
+            if not re.match(r'^\d', city_candidate):
+                if not city:
+                    city = city_candidate
+                if not zip_code:
+                    zip_code = zip_candidate
 
     # Extract phone from raw_text
     phone_match = re.search(r'\(?\d{3}\)?[\s.\-]\d{3}[\s.\-]\d{4}', raw_text)
@@ -286,13 +543,26 @@ def normalize_row(row: dict) -> dict:
     detected = row.get("detected_program_mentions", "") or ""
     services = [s.strip() for s in detected.split(",") if s.strip()]
 
-    provider_name = raw_name_line.strip()
-    provider_key = safe_slug(provider_name) + "_" + parsed_state_abbr if parsed_state_abbr else safe_slug(provider_name)
+    provider_name = _html.unescape(raw_name_line.strip())
+    street_address = _html.unescape(street_address)
+    city = _html.unescape(city)
+    dba_name = _html.unescape(dba_name)
+
+    # Build provider_key: include achc_company_id when available for stability.
+    if achc_company_id and parsed_state_abbr:
+        provider_key = f"{safe_slug(provider_name)}_{parsed_state_abbr}_{achc_company_id}"
+    elif parsed_state_abbr:
+        provider_key = safe_slug(provider_name) + "_" + parsed_state_abbr
+    else:
+        provider_key = safe_slug(provider_name)
+
+    # Pass through dba_name directly from the raw row (HTML-parsed).
+    dba_name = row.get("dba_name", "") or ""
 
     return {
         "provider_key": provider_key,
         "provider_name": provider_name,
-        "dba_name": "",
+        "dba_name": dba_name,
         "street_address": street_address,
         "city": city,
         "state": parsed_state_abbr,
@@ -306,6 +576,7 @@ def normalize_row(row: dict) -> dict:
         "confidence_status": "verified",
         "searched_program_type": row.get("searched_program_type", ""),
         "result_scope": row.get("result_scope", ""),
+        "achc_company_id": achc_company_id,
     }
 
 
@@ -499,6 +770,7 @@ async def scrape_raw_rows(page, searched_program: str, trigger_state: str, no_st
 
         raw_text = ""
         container_type = ""
+        tr_locator = None
 
         for idx, candidate in enumerate(candidate_locators):
             try:
@@ -506,6 +778,8 @@ async def scrape_raw_rows(page, searched_program: str, trigger_state: str, no_st
                 if candidate_text and "Show/Hide Accreditation Details" in candidate_text:
                     raw_text = candidate_text.strip()
                     container_type = "tr" if idx == 0 else "div"
+                    if idx == 0:
+                        tr_locator = candidate
                     break
             except Exception:
                 continue
@@ -514,7 +788,31 @@ async def scrape_raw_rows(page, searched_program: str, trigger_state: str, no_st
             continue
 
         cleaned_raw_text = raw_text.replace("Show/Hide Accreditation Details", "").strip()
-        raw_name_line, raw_address_block, parsed_state_abbr = parse_raw_block(cleaned_raw_text)
+
+        # --- Preferred path: parse innerHTML of the first <td> (T-012) ---
+        parsed = {}
+        if tr_locator is not None:
+            try:
+                td_html = await tr_locator.locator("td").first.inner_html()
+                parsed = parse_listing_html(td_html)
+            except Exception:
+                parsed = {}
+
+        if parsed.get("legal_name"):
+            raw_name_line = parsed["legal_name"]
+            raw_address_block = parsed["street_address"]
+            parsed_state_abbr = parsed["state"]
+            dba_name = parsed["dba_name"]
+            city = parsed["city"]
+            zip_code = parsed["zip"]
+            achc_company_id = parsed["achc_company_id"]
+        else:
+            # Fallback to the legacy text-based parser
+            raw_name_line, raw_address_block, parsed_state_abbr = parse_raw_block(cleaned_raw_text)
+            dba_name = ""
+            city = ""
+            zip_code = ""
+            achc_company_id = ""
 
         matches_trigger_state = False
         if not no_state_filter and parsed_state_abbr and trigger_state_abbr:
@@ -537,6 +835,11 @@ async def scrape_raw_rows(page, searched_program: str, trigger_state: str, no_st
                 "raw_text": cleaned_raw_text,
                 "source_url": AMS_URL,
                 "last_seen": datetime.utcnow().isoformat(),
+                # New fields from HTML-aware parser
+                "achc_company_id": achc_company_id,
+                "dba_name": dba_name,
+                "city": city,
+                "zip": zip_code,
             }
         )
 
@@ -743,6 +1046,62 @@ def print_coverage_report(coverage_summary: List[dict], all_rows: List[dict]):
         print(f"Coverage JSON written to: {COVERAGE_JSON_PATH}")
 
 
+async def write_to_supabase_direct(normalized_rows: List[dict], batch_size: int = 500) -> dict:
+    """Write normalized rows directly to Supabase via the merge_google_sheets_data RPC.
+
+    Bypasses Google Sheets entirely, avoiding the 6-minute Apps Script timeout
+    when payloads are large (enriched AJAX + website data).
+    """
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        print("SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set — skipping direct Supabase write")
+        return {}
+
+    rest_url = SUPABASE_URL.rstrip("/") + "/rest/v1/rpc/merge_google_sheets_data"
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "return=representation",
+    }
+
+    # Serialise services list → comma-separated string (matches SheetRow interface)
+    def _prep_row(row: dict) -> dict:
+        r = dict(row)
+        if isinstance(r.get("services"), list):
+            r["services"] = ",".join(r["services"])
+        # Remap field names to match the merge_google_sheets_data RPC schema
+        r["organization"] = r.pop("provider_name", r.get("organization", ""))
+        r["address"] = r.pop("street_address", r.get("address", ""))
+        # Ensure geocode_status is present
+        if "geocode_status" not in r:
+            r["geocode_status"] = "ok" if r.get("latitude") else "pending"
+        return r
+
+    prepped = [_prep_row(r) for r in normalized_rows]
+    totals: dict = {}
+    batches = (len(prepped) + batch_size - 1) // batch_size
+
+    async with aiohttp.ClientSession() as session:
+        for i in range(0, len(prepped), batch_size):
+            batch = prepped[i : i + batch_size]
+            batch_num = i // batch_size + 1
+            print(f"  Supabase batch {batch_num}/{batches} ({len(batch)} rows)...")
+            async with session.post(
+                rest_url,
+                json={"sheet_data": batch},
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=120),
+            ) as resp:
+                if resp.status not in (200, 201):
+                    text = await resp.text()
+                    raise Exception(f"Supabase RPC failed (batch {batch_num}): HTTP {resp.status} — {text[:300]}")
+                data = await resp.json()
+                for k, v in (data or {}).items():
+                    totals[k] = totals.get(k, 0) + (v or 0)
+
+    return totals
+
+
 async def write_to_google_sheets(raw_rows: List[dict], normalized_rows: List[dict], run_metadata: dict):
     payload = {
         "action": "replace_raw_only",
@@ -768,6 +1127,42 @@ async def write_to_google_sheets(raw_rows: List[dict], normalized_rows: List[dic
                 raise Exception(f"Google Sheets write failed with HTTP {response.status}: {text}")
 
 
+def _load_checkpoint() -> dict | None:
+    if not os.path.exists(CHECKPOINT_FILE):
+        return None
+    try:
+        with open(CHECKPOINT_FILE, "r", encoding="utf-8") as f:
+            cp = json.load(f)
+        age_hours = (time.time() - cp["saved_at_unix"]) / 3600
+        if age_hours > CHECKPOINT_MAX_AGE_HOURS:
+            print(f"Checkpoint is {age_hours:.1f}h old (max {CHECKPOINT_MAX_AGE_HOURS}h) — ignored, re-scraping")
+            return None
+        print(f"Checkpoint found ({age_hours:.1f}h old, {len(cp['normalized'])} normalized rows) — skipping scrape phase")
+        return cp
+    except Exception as exc:
+        print(f"Checkpoint load failed: {exc} — re-scraping")
+        return None
+
+
+def _save_checkpoint(all_rows: list, normalized: list, run_metadata: dict, coverage_summary: list) -> None:
+    cp = {
+        "saved_at_unix": time.time(),
+        "all_rows": all_rows,
+        "normalized": normalized,
+        "run_metadata": run_metadata,
+        "coverage_summary": coverage_summary,
+    }
+    with open(CHECKPOINT_FILE, "w", encoding="utf-8") as f:
+        json.dump(cp, f)
+    print(f"Checkpoint saved: {len(normalized)} normalized rows -> {CHECKPOINT_FILE}")
+
+
+def _delete_checkpoint() -> None:
+    if os.path.exists(CHECKPOINT_FILE):
+        os.remove(CHECKPOINT_FILE)
+        print("Checkpoint deleted (run complete)")
+
+
 async def main():
     print("Starting ACHC raw dump...")
     print(f"TEST_MODE: {TEST_MODE}")
@@ -784,78 +1179,178 @@ async def main():
     print(f"STATE_SELECTION_WAIT_MS: {STATE_SELECTION_WAIT_MS}")
     print(f"PRE_SEARCH_WAIT_MS: {PRE_SEARCH_WAIT_MS}")
     print(f"POST_SEARCH_WAIT_MS: {POST_SEARCH_WAIT_MS}")
+    print(f"ENABLE_AJAX_ACCREDITATION: {ENABLE_AJAX_ACCREDITATION}")
 
-    scrape_start_time = time.time()
-    scrape_start_dt = datetime.utcnow()
+    # ---------------------------------------------------------------------------
+    # Scrape phase — skipped if a fresh checkpoint exists
+    # ---------------------------------------------------------------------------
+    checkpoint = _load_checkpoint()
 
-    all_rows, coverage_summary = await run_scrape()
+    if checkpoint:
+        all_rows = checkpoint["all_rows"]
+        normalized = checkpoint["normalized"]
+        run_metadata = checkpoint["run_metadata"]
+        coverage_summary = checkpoint["coverage_summary"]
+        print(f"Resumed from checkpoint: {len(all_rows)} raw rows, {len(normalized)} normalized rows")
+    else:
+        scrape_start_time = time.time()
+        scrape_start_dt = datetime.utcnow()
 
-    scrape_end_time = time.time()
-    scrape_end_dt = datetime.utcnow()
-    duration_seconds = int(scrape_end_time - scrape_start_time)
-    duration_minutes = duration_seconds // 60
-    duration_remaining_seconds = duration_seconds % 60
-    duration_human = f"{duration_minutes} minutes {duration_remaining_seconds} seconds"
+        all_rows, coverage_summary = await run_scrape()
 
-    programs_with_zero_rows = [c["program_requested"] for c in coverage_summary if c["rows_parsed"] == 0]
-    scrape_status = "incomplete_scrape" if len(programs_with_zero_rows) > 2 else "complete"
+        scrape_end_time = time.time()
+        scrape_end_dt = datetime.utcnow()
+        duration_seconds = int(scrape_end_time - scrape_start_time)
+        duration_minutes = duration_seconds // 60
+        duration_remaining_seconds = duration_seconds % 60
+        duration_human = f"{duration_minutes} minutes {duration_remaining_seconds} seconds"
 
-    if scrape_status == "incomplete_scrape":
-        print(f"WARNING: {len(programs_with_zero_rows)} programs returned 0 rows — marking as incomplete_scrape")
+        # These programs consistently return 0 results on the ACHC site — not a scrape failure.
+        KNOWN_EMPTY_PROGRAMS = {
+            "Private Duty",
+            "Healthcare Staffing Services Certification",
+            "Long-Term Care Dialysis Certification",
+            "ACHC Inspection Services",
+        }
 
-    run_metadata = {
-        "run_id": f"run_{scrape_start_dt.strftime('%Y%m%dT%H%M%SZ')}",
-        "started_at_utc": scrape_start_dt.isoformat(),
-        "completed_at_utc": scrape_end_dt.isoformat(),
-        "duration_seconds": duration_seconds,
-        "duration_human": duration_human,
-        "total_rows_captured": len(all_rows),
-        "programs_scraped": PROGRAMS,
-        "programs_with_zero_rows": programs_with_zero_rows,
-        "limit_locations": LIMIT_LOCATIONS,
-        "no_state_filter": NO_STATE_FILTER,
-        "trigger_state": "" if NO_STATE_FILTER else TRIGGER_STATE,
-        "test_mode": TEST_MODE,
-        "scrape_status": scrape_status,
-    }
+        programs_with_zero_rows = [
+            c["program_requested"] for c in coverage_summary
+            if c["rows_parsed"] == 0 and c["program_requested"] not in KNOWN_EMPTY_PROGRAMS
+        ]
+        scrape_status = "incomplete_scrape" if len(programs_with_zero_rows) > 2 else "complete"
 
-    print(f"Scrape duration: {duration_human}")
-    print(f"Scrape status: {scrape_status}")
+        if programs_with_zero_rows:
+            print(f"WARNING: {len(programs_with_zero_rows)} unexpected programs returned 0 rows — marking as incomplete_scrape")
+        known_empty_hit = [c["program_requested"] for c in coverage_summary if c["rows_parsed"] == 0 and c["program_requested"] in KNOWN_EMPTY_PROGRAMS]
+        if known_empty_hit:
+            print(f"Known-empty programs (expected, not a scrape failure): {known_empty_hit}")
 
-    if not all_rows and not TEST_MODE:
-        raise Exception("No rows scraped")
+        run_metadata = {
+            "run_id": f"run_{scrape_start_dt.strftime('%Y%m%dT%H%M%SZ')}",
+            "started_at_utc": scrape_start_dt.isoformat(),
+            "completed_at_utc": scrape_end_dt.isoformat(),
+            "duration_seconds": duration_seconds,
+            "duration_human": duration_human,
+            "total_rows_captured": len(all_rows),
+            "programs_scraped": PROGRAMS,
+            "programs_with_zero_rows": programs_with_zero_rows,
+            "limit_locations": LIMIT_LOCATIONS,
+            "no_state_filter": NO_STATE_FILTER,
+            "trigger_state": "" if NO_STATE_FILTER else TRIGGER_STATE,
+            "test_mode": TEST_MODE,
+            "scrape_status": scrape_status,
+            "ajax_accreditation_enabled": ENABLE_AJAX_ACCREDITATION,
+        }
 
-    print(f"Raw rows captured: {len(all_rows)}")
-    print("Sample raw rows:")
-    for row in all_rows[:3]:
-        print(
-            {
-                "raw_index": row["raw_index"],
-                "searched_program_type": row["searched_program_type"],
-                "search_trigger_state": row["search_trigger_state"],
-                "parsed_state_abbr": row["parsed_state_abbr"],
-                "matches_trigger_state": row["matches_trigger_state"],
-                "detected_program_mentions": row["detected_program_mentions"],
-                "raw_name_line": row["raw_name_line"],
-                "result_scope": row["result_scope"],
-            }
-        )
+        print(f"Scrape duration: {duration_human}")
+        print(f"Scrape status: {scrape_status}")
 
-    print_coverage_report(coverage_summary, all_rows)
+        if not all_rows and not TEST_MODE:
+            raise Exception("No rows scraped")
 
-    normalized = normalize_rows(all_rows)
-    print(f"Normalized rows: {len(normalized)}")
+        print(f"Raw rows captured: {len(all_rows)}")
+        print("Sample raw rows:")
+        for row in all_rows[:3]:
+            print(
+                {
+                    "raw_index": row["raw_index"],
+                    "searched_program_type": row["searched_program_type"],
+                    "search_trigger_state": row["search_trigger_state"],
+                    "parsed_state_abbr": row["parsed_state_abbr"],
+                    "matches_trigger_state": row["matches_trigger_state"],
+                    "detected_program_mentions": row["detected_program_mentions"],
+                    "raw_name_line": row["raw_name_line"],
+                    "result_scope": row["result_scope"],
+                }
+            )
 
+        print_coverage_report(coverage_summary, all_rows)
+
+        normalized = normalize_rows(all_rows)
+        print(f"Normalized rows: {len(normalized)}")
+
+        _save_checkpoint(all_rows, normalized, run_metadata, coverage_summary)
+
+    # ---------------------------------------------------------------------------
+    # Enrichment phase — geocode, websites, AJAX (runs whether fresh or resumed)
+    # ---------------------------------------------------------------------------
     normalized = await geocode_locations(normalized)
-    print(f"Geocoding complete")
+    geocode_failures = [r for r in normalized if r.get("geocode_status") == "failed"]
+    geocode_ok       = [r for r in normalized if r.get("geocode_status") == "ok"]
+    print(f"Geocoding complete: {len(geocode_ok)} with coords, {len(geocode_failures)} without")
+    if geocode_failures:
+        run_metadata["geocode_failures"] = len(geocode_failures)
+        run_metadata["geocode_failures_note"] = "Enable billing at console.cloud.google.com/project/_/billing/enable to resolve. See geocode_failures.json for the full list."
 
-    normalized = await enrich_websites(normalized)
-    print(f"Website enrichment complete")
+    if ENABLE_WEBSITE_ENRICHMENT:
+        normalized = await enrich_websites(normalized)
+        print(f"Website enrichment complete")
+    else:
+        print("Website enrichment disabled (ENABLE_WEBSITE_ENRICHMENT=false)")
 
-    await write_to_google_sheets(all_rows, normalized, run_metadata)
-    print("Raw and normalized data written to Google Sheets")
-    print(f"Run complete: {run_metadata['run_id']} — {duration_human} — {len(all_rows)} rows — status: {scrape_status}")
+    if ENABLE_AJAX_ACCREDITATION:
+        company_ids = [r["achc_company_id"] for r in normalized if r.get("achc_company_id")]
+        if company_ids:
+            ajax_results = await fetch_accreditation_services(company_ids)
+            normalized = merge_ajax_services(normalized, ajax_results)
+            print(f"AJAX accreditation enrichment complete: {len(company_ids)} providers queried")
+        else:
+            print("AJAX accreditation skipped: no company IDs available")
+    else:
+        print("AJAX accreditation disabled (ENABLE_AJAX_ACCREDITATION=false)")
+
+    # Write enriched normalized rows directly to Supabase (bypasses Google Sheets
+    # 6-minute timeout that triggers when AJAX services + website data is included).
+    if ENABLE_DIRECT_SUPABASE:
+        print("Writing normalized rows directly to Supabase...")
+        sb_result = await write_to_supabase_direct(normalized)
+        print(f"Supabase direct write complete: {sb_result}")
+    else:
+        print("Direct Supabase write disabled (ENABLE_DIRECT_SUPABASE=false)")
+
+    # Google Sheets: send raw rows only as audit trail (fast — no enriched payload).
+    if GOOGLE_SHEETS_URL:
+        await write_to_google_sheets(all_rows, normalized, run_metadata)
+        print("Raw and normalized data written to Google Sheets")
+    else:
+        print("Skipping Google Sheets write — GOOGLE_SHEETS_WEB_APP_URL is not set")
+    _delete_checkpoint()
+    print(f"Run complete: {run_metadata['run_id']} — {run_metadata['duration_human']} — {len(all_rows)} rows — status: {run_metadata['scrape_status']}")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    import sys as _sys
+
+    # Mirror stdout to scraper_run.log so we never lose output to a broken pipe.
+    class _Tee:
+        def __init__(self, *streams):
+            self._streams = streams
+        def write(self, data):
+            for s in self._streams:
+                s.write(data)
+        def flush(self):
+            for s in self._streams:
+                s.flush()
+        def __getattr__(self, name):
+            return getattr(self._streams[0], name)
+
+    import datetime as _dt
+    _log = None
+    for _log_path in ("scraper_run.log", f"scraper_run_{_dt.datetime.now().strftime('%Y%m%d_%H%M%S')}.log"):
+        try:
+            _log = open(_log_path, "w", encoding="utf-8", buffering=1)
+            print(f"Logging to {_log_path}", file=_sys.__stdout__)
+            break
+        except PermissionError:
+            print(f"Warning: {_log_path} is locked, trying fallback", file=_sys.__stdout__)
+
+    if _log:
+        _sys.stdout = _Tee(_sys.__stdout__, _log)
+        _sys.stderr = _Tee(_sys.__stderr__, _log)
+
+    try:
+        asyncio.run(main())
+    finally:
+        if _log:
+            _log.flush()
+            _log.close()
