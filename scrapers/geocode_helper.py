@@ -95,34 +95,81 @@ async def geocode_address(
 # Batch geocoding (public API)
 # ---------------------------------------------------------------------------
 
-async def geocode_locations(locations: list) -> list:
-    """Geocode a list of provider dicts in-place.  Returns the same list."""
-    if not GOOGLE_MAPS_API_KEY:
-        print("GOOGLE_MAPS_API_KEY not set — skipping geocoding")
-        return locations
+def group_by_address(locations: list) -> "dict[str, list[dict]]":
+    """Group provider records by normalized physical address.
 
-    cache = load_cache()
-    to_geocode: list[tuple[int, dict, str]] = []
-
-    for i, loc in enumerate(locations):
+    The same physical location can appear multiple times in `locations`
+    (e.g. one row per accredited program/service the institution offers).
+    Geocoding must key off this grouping, not the raw list, or duplicate
+    addresses get billed once per occurrence instead of once per address.
+    """
+    groups: "dict[str, list[dict]]" = {}
+    for loc in locations:
         key = address_key(
             loc.get("street_address", ""),
             loc.get("city", ""),
             loc.get("state", ""),
             str(loc.get("zip", "")),
         )
-        if key in cache:
-            loc["latitude"] = cache[key].get("latitude")
-            loc["longitude"] = cache[key].get("longitude")
-            loc["geocode_status"] = "ok"
-        else:
-            loc["geocode_status"] = "pending"
-            to_geocode.append((i, loc, key))
+        groups.setdefault(key, []).append(loc)
+    return groups
 
-    cached_count = len(locations) - len(to_geocode)
+
+def print_dedup_report(locations: list) -> "dict[str, list[dict]]":
+    """Print raw provider count vs. unique-address count. Free — no API calls."""
+    groups = group_by_address(locations)
+    duplicate_groups = {k: v for k, v in groups.items() if len(v) > 1}
+    if duplicate_groups:
+        dup_providers = sum(len(v) for v in duplicate_groups.values())
+        print(
+            f"Address dedup: {len(locations)} providers -> {len(groups)} unique addresses "
+            f"({len(duplicate_groups)} addresses shared by {dup_providers} providers total — "
+            f"each will be geocoded once, not once per provider)"
+        )
+        for key, group in list(duplicate_groups.items())[:10]:
+            sample = group[0]
+            names = [g.get("provider_name") for g in group]
+            print(f"    {sample.get('street_address')}, {sample.get('city')} {sample.get('state')}: {names}")
+        if len(duplicate_groups) > 10:
+            print(f"    ... and {len(duplicate_groups) - 10} more duplicate-address groups")
+    else:
+        print(f"Address dedup: {len(locations)} providers -> {len(groups)} unique addresses (no duplicates)")
+    return groups
+
+
+async def geocode_locations(locations: list) -> list:
+    """Geocode a list of provider dicts in-place.  Returns the same list.
+
+    Geocodes by unique physical address (see group_by_address), not by
+    provider record — a location listed multiple times (once per accredited
+    program/service) is billed exactly once, with the result broadcast to
+    every provider record sharing that address.
+    """
+    if not GOOGLE_MAPS_API_KEY:
+        print("GOOGLE_MAPS_API_KEY not set — skipping geocoding")
+        return locations
+
+    cache = load_cache()
+    groups = print_dedup_report(locations)
+
+    to_geocode: list[tuple[str, list[dict]]] = []
+    for key, group in groups.items():
+        if key in cache:
+            lat = cache[key].get("latitude")
+            lon = cache[key].get("longitude")
+            for loc in group:
+                loc["latitude"] = lat
+                loc["longitude"] = lon
+                loc["geocode_status"] = "ok"
+        else:
+            for loc in group:
+                loc["geocode_status"] = "pending"
+            to_geocode.append((key, group))
+
+    cached_count = len(groups) - len(to_geocode)
     print(
-        f"Geocoding: {len(to_geocode)} new addresses "
-        f"({cached_count} served from cache) — "
+        f"Geocoding: {len(to_geocode)} new unique addresses to look up "
+        f"({cached_count} addresses served from cache) — "
         f"concurrency={GEOCODE_CONCURRENCY}"
     )
 
@@ -136,34 +183,38 @@ async def geocode_locations(locations: list) -> list:
 
     async with aiohttp.ClientSession(connector=connector) as session:
 
-        async def _geocode_one(idx: int, loc: dict, key: str) -> None:
+        async def _geocode_one(key: str, group: list) -> None:
             nonlocal completed
+            sample = group[0]
             lat, lon = await geocode_address(
                 session,
                 semaphore,
-                loc.get("street_address", ""),
-                loc.get("city", ""),
-                loc.get("state", ""),
-                str(loc.get("zip", "")),
+                sample.get("street_address", ""),
+                sample.get("city", ""),
+                sample.get("state", ""),
+                str(sample.get("zip", "")),
             )
-            loc["latitude"] = lat
-            loc["longitude"] = lon
-            if lat is not None and lon is not None:
+            status = "ok" if lat is not None and lon is not None else "failed"
+            if status == "ok":
                 cache[key] = {"latitude": lat, "longitude": lon}
-                loc["geocode_status"] = "ok"
-            else:
-                loc["geocode_status"] = "failed"
+            for loc in group:
+                loc["latitude"] = lat
+                loc["longitude"] = lon
+                loc["geocode_status"] = status
             completed += 1
             if completed % 500 == 0:
                 print(f"  Geocoded {completed}/{len(to_geocode)} new addresses...")
                 save_cache(cache)
 
-        await asyncio.gather(*[_geocode_one(i, loc, key) for i, loc, key in to_geocode])
+        await asyncio.gather(*[_geocode_one(key, group) for key, group in to_geocode])
 
     save_cache(cache)
     failed = [loc for loc in locations if loc.get("geocode_status") == "failed"]
-    succeeded = completed - len(failed)
-    print(f"Geocoding complete: {succeeded} succeeded, {len(failed)} failed (will retry next run)")
+    ok = [loc for loc in locations if loc.get("geocode_status") == "ok"]
+    print(
+        f"Geocoding complete: {len(to_geocode)} API calls made for {len(to_geocode)} unique addresses — "
+        f"{len(ok)} providers resolved, {len(failed)} providers failed (will retry next run)"
+    )
     if failed:
         print(f"  Failed addresses (billing/API issue — not bad addresses):")
         for loc in failed[:5]:

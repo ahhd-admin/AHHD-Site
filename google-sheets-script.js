@@ -4,7 +4,8 @@ function doGet(e) {
 
   if (action === "get_normalized") {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const sheet = ss.getSheetByName("Normalized_ACHC");
+    const testMode = e.parameter.test_mode === "true";
+    const sheet = ss.getSheetByName(testMode ? "Normalized_ACHC_Test" : "Normalized_ACHC");
     if (!sheet || sheet.getLastRow() < 2) {
       return ContentService
         .createTextOutput(JSON.stringify([]))
@@ -282,7 +283,7 @@ function mergeNormalizedRows_(ss, normalizedRows, testMode) {
     "street_address", "city", "state", "zip", "phone", "services",
     "accrediting_body", "source_url", "last_seen", "last_verified_at",
     "confidence_status", "searched_program_type", "result_scope",
-    "latitude", "longitude"
+    "latitude", "longitude", "achc_company_id", "geocode_status"
   ];
   ensureHeaders_(sheet, headers);
 
@@ -326,7 +327,9 @@ function mergeNormalizedRows_(ss, normalizedRows, testMode) {
       row.searched_program_type || "",                                        // 15
       row.result_scope || "",                                                 // 16
       row.latitude !== undefined && row.latitude !== null ? row.latitude : "",   // 17
-      row.longitude !== undefined && row.longitude !== null ? row.longitude : "" // 18
+      row.longitude !== undefined && row.longitude !== null ? row.longitude : "", // 18
+      row.achc_company_id || "",                                              // 19
+      row.geocode_status || ""                                                // 20
     ];
 
     if (keyIndex[key]) {

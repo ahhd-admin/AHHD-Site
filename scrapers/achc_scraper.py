@@ -10,7 +10,7 @@ from typing import Dict, List, Set, Tuple
 
 import aiohttp
 from dotenv import load_dotenv
-from geocode_helper import geocode_locations
+from geocode_helper import geocode_locations, print_dedup_report
 from places_helper import enrich_websites
 from accreditation_helper import fetch_accreditation_services, merge_ajax_services
 from playwright.async_api import async_playwright
@@ -65,6 +65,7 @@ NO_STATE_FILTER = os.getenv("NO_STATE_FILTER", "true").lower() == "true"
 
 ENABLE_AJAX_ACCREDITATION = os.getenv("ENABLE_AJAX_ACCREDITATION", "true").lower() == "true"
 ENABLE_WEBSITE_ENRICHMENT = os.getenv("ENABLE_WEBSITE_ENRICHMENT", "true").lower() == "true"
+ENABLE_GEOCODING        = os.getenv("ENABLE_GEOCODING", "true").lower() == "true"
 ENABLE_DIRECT_SUPABASE   = os.getenv("ENABLE_DIRECT_SUPABASE", "true").lower() == "true"
 
 SUPABASE_URL             = os.getenv("SUPABASE_URL", "")
@@ -91,7 +92,7 @@ PROGRAMS = (
 
 if not GOOGLE_SHEETS_URL:
     if not ENABLE_DIRECT_SUPABASE:
-        raise ValueError("Missing GOOGLE_SHEETS_WEB_APP_URL in environment variables")
+        print("WARNING: no write destination active (GOOGLE_SHEETS_WEB_APP_URL unset, ENABLE_DIRECT_SUPABASE=false) — this run will scrape and report only, nothing will be written anywhere")
     else:
         print("WARNING: GOOGLE_SHEETS_WEB_APP_URL is not set — Google Sheets writes will be skipped (ENABLE_DIRECT_SUPABASE is active)")
 
@@ -1181,6 +1182,8 @@ async def main():
     print(f"PRE_SEARCH_WAIT_MS: {PRE_SEARCH_WAIT_MS}")
     print(f"POST_SEARCH_WAIT_MS: {POST_SEARCH_WAIT_MS}")
     print(f"ENABLE_AJAX_ACCREDITATION: {ENABLE_AJAX_ACCREDITATION}")
+    print(f"ENABLE_GEOCODING: {ENABLE_GEOCODING}")
+    print(f"ENABLE_WEBSITE_ENRICHMENT: {ENABLE_WEBSITE_ENRICHMENT}")
 
     # ---------------------------------------------------------------------------
     # Scrape phase — skipped if a fresh checkpoint exists
@@ -1275,13 +1278,17 @@ async def main():
     # ---------------------------------------------------------------------------
     # Enrichment phase — geocode, websites, AJAX (runs whether fresh or resumed)
     # ---------------------------------------------------------------------------
-    normalized = await geocode_locations(normalized)
-    geocode_failures = [r for r in normalized if r.get("geocode_status") == "failed"]
-    geocode_ok       = [r for r in normalized if r.get("geocode_status") == "ok"]
-    print(f"Geocoding complete: {len(geocode_ok)} with coords, {len(geocode_failures)} without")
-    if geocode_failures:
-        run_metadata["geocode_failures"] = len(geocode_failures)
-        run_metadata["geocode_failures_note"] = "Enable billing at console.cloud.google.com/project/_/billing/enable to resolve. See geocode_failures.json for the full list."
+    if ENABLE_GEOCODING:
+        normalized = await geocode_locations(normalized)
+        geocode_failures = [r for r in normalized if r.get("geocode_status") == "failed"]
+        geocode_ok       = [r for r in normalized if r.get("geocode_status") == "ok"]
+        print(f"Geocoding complete: {len(geocode_ok)} with coords, {len(geocode_failures)} without")
+        if geocode_failures:
+            run_metadata["geocode_failures"] = len(geocode_failures)
+            run_metadata["geocode_failures_note"] = "Enable billing at console.cloud.google.com/project/_/billing/enable to resolve. See geocode_failures.json for the full list."
+    else:
+        print("Geocoding disabled (ENABLE_GEOCODING=false) — dedup report only, no API calls:")
+        print_dedup_report(normalized)
 
     if ENABLE_WEBSITE_ENRICHMENT:
         normalized = await enrich_websites(normalized)

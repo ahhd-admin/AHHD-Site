@@ -38,17 +38,22 @@ jobs:
             geocode-cache-
 
       # Note: normalization logic is unit-tested separately in the test-normalization workflow
+      # DIAGNOSTIC PASS: full national pull, but geocoding/Supabase/Sheets are
+      # all off. This only scrapes, normalizes, and reports the dedup counts
+      # (raw rows -> normalized providers -> unique addresses) so the real
+      # geocoding call count can be confirmed before anything is billed or
+      # written to production. Flip ENABLE_GEOCODING / ENABLE_DIRECT_SUPABASE
+      # back on for the real run once the numbers check out.
       - name: Run ACHC scraper and write raw + merged tabs
         working-directory: ./scrapers
         env:
-          GOOGLE_SHEETS_WEB_APP_URL: ${{ secrets.GOOGLE_SHEETS_WEB_APP_URL }}
-          LIMIT_LOCATIONS: 100
+          LIMIT_LOCATIONS: 0
           TEST_MODE: "true"
           SCRAPER_SECRET: ${{ secrets.SCRAPER_SECRET }}
           GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
-          # Places Text Search is the most expensive SKU in use ($32/1000) --
-          # held off entirely until geocoding-only cost is verified in production.
+          ENABLE_GEOCODING: "false"
           ENABLE_WEBSITE_ENRICHMENT: "false"
+          ENABLE_DIRECT_SUPABASE: "false"
         run: |
           python run_scraper_and_merge.py
 
