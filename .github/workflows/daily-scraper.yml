@@ -26,6 +26,17 @@ jobs:
           pip install -r requirements.txt
           playwright install chromium
 
+      # Persist geocode results across runs so already-geocoded addresses are
+      # never re-billed to the Geocoding API. Without this, the cache file
+      # starts empty every run and every provider gets re-geocoded nightly.
+      - name: Restore geocode cache
+        uses: actions/cache@v4
+        with:
+          path: scrapers/geocode_cache.json
+          key: geocode-cache-${{ github.run_id }}
+          restore-keys: |
+            geocode-cache-
+
       # Note: normalization logic is unit-tested separately in the test-normalization workflow
       - name: Run ACHC scraper and write raw + merged tabs
         working-directory: ./scrapers
@@ -35,6 +46,9 @@ jobs:
           TEST_MODE: "true"
           SCRAPER_SECRET: ${{ secrets.SCRAPER_SECRET }}
           GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+          # Places Text Search is the most expensive SKU in use ($32/1000) --
+          # held off entirely until geocoding-only cost is verified in production.
+          ENABLE_WEBSITE_ENRICHMENT: "false"
         run: |
           python run_scraper_and_merge.py
 
