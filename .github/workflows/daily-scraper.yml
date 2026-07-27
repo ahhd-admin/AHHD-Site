@@ -38,20 +38,12 @@ jobs:
         run: |
           python run_scraper_and_merge.py
 
-      - name: Trigger Supabase sync
-        if: success()
-        env:
-          SUPABASE_SYNC_URL: ${{ secrets.SUPABASE_SYNC_URL }}
-        run: |
-          if [ -n "$SUPABASE_SYNC_URL" ]; then
-            curl -s -X POST "$SUPABASE_SYNC_URL" \
-              -H "Content-Type: application/json" \
-              -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
-              -d "{}" \
-              --fail-with-body || echo "Supabase sync failed (non-blocking)"
-          else
-            echo "SUPABASE_SYNC_URL not configured, skipping Supabase sync"
-          fi
+      # Production Supabase writes happen directly from the scraper
+      # (write_to_supabase_direct, ENABLE_DIRECT_SUPABASE) above. Google
+      # Sheets is now a read-only backup/audit trail only -- nothing reads
+      # from Sheets back into Supabase, so there is no second, potentially
+      # stale write path and no need for the sync-google-sheets Edge
+      # Function to be reachable. See P0-019/P0-020 in the strategy doc.
 
       - name: Notify on failure
         if: failure()
