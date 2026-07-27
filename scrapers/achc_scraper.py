@@ -501,6 +501,7 @@ def normalize_row(row: dict) -> dict:
     raw_address_block = row.get("raw_address_block", "") or ""
     parsed_state_abbr = row.get("parsed_state_abbr", "") or ""
     achc_company_id = row.get("achc_company_id", "") or ""
+    dba_name = row.get("dba_name", "") or ""
 
     # Split raw_address_block on " | " — parse_raw_block builds it as
     # " | ".join(address_lines) where address_lines are all lines before
@@ -555,9 +556,6 @@ def normalize_row(row: dict) -> dict:
         provider_key = safe_slug(provider_name) + "_" + parsed_state_abbr
     else:
         provider_key = safe_slug(provider_name)
-
-    # Pass through dba_name directly from the raw row (HTML-parsed).
-    dba_name = row.get("dba_name", "") or ""
 
     return {
         "provider_key": provider_key,
@@ -1046,6 +1044,22 @@ def print_coverage_report(coverage_summary: List[dict], all_rows: List[dict]):
         print(f"Coverage JSON written to: {COVERAGE_JSON_PATH}")
 
 
+def prep_row_for_supabase(row: dict) -> dict:
+    """Prepare a normalized row for the merge_google_sheets_data RPC.
+
+    Field names must match what the RPC reads directly via row_data->>'...'
+    (see supabase/migrations/20260101000000_merge_google_sheets_data.sql) —
+    provider_name and street_address, never organization/address.
+    """
+    r = dict(row)
+    if isinstance(r.get("services"), list):
+        r["services"] = ",".join(r["services"])
+    # Ensure geocode_status is present
+    if "geocode_status" not in r:
+        r["geocode_status"] = "ok" if r.get("latitude") else "pending"
+    return r
+
+
 async def write_to_supabase_direct(normalized_rows: List[dict], batch_size: int = 500) -> dict:
     """Write normalized rows directly to Supabase via the merge_google_sheets_data RPC.
 
@@ -1064,20 +1078,7 @@ async def write_to_supabase_direct(normalized_rows: List[dict], batch_size: int 
         "Prefer": "return=representation",
     }
 
-    # Serialise services list → comma-separated string (matches SheetRow interface)
-    def _prep_row(row: dict) -> dict:
-        r = dict(row)
-        if isinstance(r.get("services"), list):
-            r["services"] = ",".join(r["services"])
-        # Remap field names to match the merge_google_sheets_data RPC schema
-        r["organization"] = r.pop("provider_name", r.get("organization", ""))
-        r["address"] = r.pop("street_address", r.get("address", ""))
-        # Ensure geocode_status is present
-        if "geocode_status" not in r:
-            r["geocode_status"] = "ok" if r.get("latitude") else "pending"
-        return r
-
-    prepped = [_prep_row(r) for r in normalized_rows]
+    prepped = [prep_row_for_supabase(r) for r in normalized_rows]
     totals: dict = {}
     batches = (len(prepped) + batch_size - 1) // batch_size
 

@@ -5,3 +5,9 @@ places_cache.json
 coverage_summary.json
 debug_artifacts/
 structure_dump.json
+*.log.err
+geocode_failures.json
+missing_geocodes.csv
+scrape_checkpoint.json
+supabase/.temp/
+.claude/

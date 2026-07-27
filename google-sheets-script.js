@@ -278,10 +278,11 @@ function mergeNormalizedRows_(ss, normalizedRows, testMode) {
   if (!sheet) sheet = ss.insertSheet(sheetName);
 
   const headers = [
-    "provider_key", "provider_name", "street_address", "city", "state",
-    "zip", "phone", "services", "accrediting_body", "source_url",
-    "last_seen", "last_verified_at", "confidence_status",
-    "searched_program_type", "result_scope", "latitude", "longitude"
+    "provider_key", "provider_name", "dba_name", "website",
+    "street_address", "city", "state", "zip", "phone", "services",
+    "accrediting_body", "source_url", "last_seen", "last_verified_at",
+    "confidence_status", "searched_program_type", "result_scope",
+    "latitude", "longitude"
   ];
   ensureHeaders_(sheet, headers);
 
@@ -307,50 +308,54 @@ function mergeNormalizedRows_(ss, normalizedRows, testMode) {
     const key = row.provider_key;
     const services = Array.isArray(row.services) ? row.services.join(", ") : (row.services || "");
     const rowValues = [
-      key,
-      row.provider_name || "",
-      row.street_address || "",
-      row.city || "",
-      row.state || "",
-      row.zip || "",
-      row.phone || "",
-      services,
-      row.accrediting_body || "ACHC",
-      row.source_url || "",
-      row.last_seen || "",
-      now,
-      row.confidence_status || "verified",
-      row.searched_program_type || "",
-      row.result_scope || "",
-      row.latitude !== undefined && row.latitude !== null ? row.latitude : "",
-      row.longitude !== undefined && row.longitude !== null ? row.longitude : ""
+      key,                                                                    // 0
+      row.provider_name || "",                                                // 1
+      row.dba_name || "",                                                     // 2
+      row.website || "",                                                      // 3
+      row.street_address || "",                                               // 4
+      row.city || "",                                                         // 5
+      row.state || "",                                                        // 6
+      row.zip || "",                                                          // 7
+      row.phone || "",                                                        // 8
+      services,                                                               // 9
+      row.accrediting_body || "ACHC",                                         // 10
+      row.source_url || "",                                                   // 11
+      row.last_seen || "",                                                    // 12
+      now,                                                                    // 13
+      row.confidence_status || "verified",                                    // 14
+      row.searched_program_type || "",                                        // 15
+      row.result_scope || "",                                                 // 16
+      row.latitude !== undefined && row.latitude !== null ? row.latitude : "",   // 17
+      row.longitude !== undefined && row.longitude !== null ? row.longitude : "" // 18
     ];
 
     if (keyIndex[key]) {
       // Existing row — update in place
       const rowNum = keyIndex[key];
       const existing = sheet.getRange(rowNum, 1, 1, headers.length).getValues()[0];
-      const existingServices = existing[7] || "";
+      const existingServices = existing[9] || "";
       const hasChanged = existing[1] !== rowValues[1] ||
-                         existing[2] !== rowValues[2] ||
-                         existing[3] !== rowValues[3] ||
                          existing[4] !== rowValues[4] ||
-                         existing[5] !== rowValues[5];
+                         existing[5] !== rowValues[5] ||
+                         existing[6] !== rowValues[6] ||
+                         existing[7] !== rowValues[7];
 
       if (hasChanged) {
-        rowValues[12] = "changed";
+        rowValues[14] = "changed";
       } else {
-        rowValues[12] = existing[12] === "possibly_inactive" ? "verified" : existing[12];
+        rowValues[14] = existing[14] === "possibly_inactive" ? "verified" : existing[14];
       }
       // Merge services (union)
       const existingSet = new Set(existingServices.split(",").map(s => s.trim()).filter(Boolean));
       const incomingSet = new Set(services.split(",").map(s => s.trim()).filter(Boolean));
       const mergedServices = [...new Set([...existingSet, ...incomingSet])].join(", ");
-      rowValues[7] = mergedServices;
+      rowValues[9] = mergedServices;
 
-      // Preserve existing lat/lon if new value is blank
-      if (!rowValues[15] && existing[15]) rowValues[15] = existing[15];
-      if (!rowValues[16] && existing[16]) rowValues[16] = existing[16];
+      // Preserve existing dba_name/website/lat/lon if new value is blank
+      if (!rowValues[2] && existing[2]) rowValues[2] = existing[2];
+      if (!rowValues[3] && existing[3]) rowValues[3] = existing[3];
+      if (!rowValues[17] && existing[17]) rowValues[17] = existing[17];
+      if (!rowValues[18] && existing[18]) rowValues[18] = existing[18];
 
       sheet.getRange(rowNum, 1, 1, headers.length).setValues([rowValues]);
     } else {
