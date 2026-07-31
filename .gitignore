@@ -1,14 +1,46 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Dependencies
+node_modules
+.pnp
+.pnp.js
+
+# Build output
+dist
+dist-ssr
+*.local
+
+# Environment variables
 .env
-*.env
+.env.local
+.env.*.local
+
+# Editor directories
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Supabase
+supabase/.temp
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Geocode cache
 geocode_cache.json
 geocode_monthly_budget.json
-places_cache.json
-coverage_summary.json
-debug_artifacts/
-structure_dump.json
-*.log.err
-geocode_failures.json
-missing_geocodes.csv
-scrape_checkpoint.json
-supabase/.temp/
-.claude/
+
+# Test data
+data/
