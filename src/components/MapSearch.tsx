@@ -188,7 +188,6 @@ function MapContent({ locations, searchLocation, userCoords, radiusMiles }: MapS
                     borderRadius: '50%',
                     width: '24px',
                     height: '24px',
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
                     cursor: 'pointer',
                   }}
                 />
