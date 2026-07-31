@@ -8,6 +8,7 @@ subsequent runs.
 import asyncio
 import json
 import os
+from datetime import datetime, timezone
 from typing import Optional, Tuple
 
 import aiohttp
@@ -18,10 +19,59 @@ load_dotenv()
 CACHE_FILE = "geocode_cache.json"
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
 GEOCODE_CONCURRENCY = int(os.getenv("GEOCODE_CONCURRENCY", "5"))
+# Optional extra cap on new (uncached) API calls in a single run, independent
+# of the monthly budget below. 0 = no per-run cap (a run may use as much of
+# the remaining monthly budget as there is backlog for).
+GEOCODE_MAX_NEW_PER_RUN = int(os.getenv("GEOCODE_MAX_NEW_PER_RUN", "0"))
 # Minimum seconds between requests per slot — keeps burst well under Google's 50 QPS cap
 _REQUEST_DELAY = float(os.getenv("GEOCODE_REQUEST_DELAY", "0.25"))
 
 _GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json"
+
+# ---------------------------------------------------------------------------
+# Monthly budget tracking — Google's Geocoding API free tier resets monthly
+# (10,000 calls/month as of this writing), not daily or per-run. The budget
+# period here is deliberately calendar-month to match that reset cadence;
+# if Google's actual billing-cycle reset day differs from the 1st, adjust
+# _current_period() accordingly. Default budget is set slightly below the
+# stated free tier as a safety margin.
+# ---------------------------------------------------------------------------
+
+BUDGET_FILE = "geocode_monthly_budget.json"
+GEOCODE_MONTHLY_BUDGET = int(os.getenv("GEOCODE_MONTHLY_BUDGET", "9500"))
+
+
+def _current_period() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m")
+
+
+def load_monthly_budget_state() -> dict:
+    period = _current_period()
+    if os.path.exists(BUDGET_FILE):
+        with open(BUDGET_FILE, "r", encoding="utf-8-sig") as f:
+            state = json.load(f)
+        if state.get("period") == period:
+            return state
+    # No file yet, or the calendar month rolled over — fresh budget.
+    return {"period": period, "calls_made": 0}
+
+
+def save_monthly_budget_state(state: dict) -> None:
+    with open(BUDGET_FILE, "w", encoding="utf-8") as f:
+        json.dump(state, f, indent=2)
+
+
+def remaining_monthly_budget() -> int:
+    state = load_monthly_budget_state()
+    return max(0, GEOCODE_MONTHLY_BUDGET - state.get("calls_made", 0))
+
+
+def record_monthly_budget_usage(calls_made: int) -> None:
+    if calls_made <= 0:
+        return
+    state = load_monthly_budget_state()
+    state["calls_made"] = state.get("calls_made", 0) + calls_made
+    save_monthly_budget_state(state)
 
 
 # ---------------------------------------------------------------------------
@@ -177,6 +227,35 @@ async def geocode_locations(locations: list) -> list:
         print("All geocodes served from cache")
         return locations
 
+    # Monthly budget is the real cap (matches Google's actual free-tier reset
+    # cadence). GEOCODE_MAX_NEW_PER_RUN is an optional additional per-run
+    # throttle on top of it. Sorted by address key so, since completed
+    # addresses drop out of `to_geocode` in future runs (already cached),
+    # each run picks up where the previous one left off instead of repeatedly
+    # attempting the same addresses.
+    remaining = remaining_monthly_budget()
+    effective_cap = remaining if GEOCODE_MAX_NEW_PER_RUN <= 0 else min(remaining, GEOCODE_MAX_NEW_PER_RUN)
+    print(f"Monthly geocode budget: {remaining}/{GEOCODE_MONTHLY_BUDGET} remaining for {_current_period()}")
+
+    if effective_cap <= 0:
+        for _, group in to_geocode:
+            for loc in group:
+                loc["geocode_status"] = "pending"
+        print(
+            f"Monthly geocode budget exhausted — 0 API calls this run, "
+            f"{len(to_geocode)} addresses deferred to next month (geocode_status=pending)"
+        )
+        return locations
+
+    if len(to_geocode) > effective_cap:
+        to_geocode.sort(key=lambda kv: kv[0])
+        deferred = len(to_geocode) - effective_cap
+        to_geocode = to_geocode[:effective_cap]
+        print(
+            f"Budget cap {effective_cap} — geocoding {len(to_geocode)} addresses this run, "
+            f"deferring {deferred} (left as geocode_status=pending)"
+        )
+
     semaphore = asyncio.Semaphore(GEOCODE_CONCURRENCY)
     connector = aiohttp.TCPConnector(limit=GEOCODE_CONCURRENCY + 4)
     completed = 0
@@ -209,11 +288,17 @@ async def geocode_locations(locations: list) -> list:
         await asyncio.gather(*[_geocode_one(key, group) for key, group in to_geocode])
 
     save_cache(cache)
+    # Record conservatively: every attempted call counts against the monthly
+    # budget regardless of success/failure, so a run of denied/errored calls
+    # can't silently blow past the free tier.
+    record_monthly_budget_usage(len(to_geocode))
     failed = [loc for loc in locations if loc.get("geocode_status") == "failed"]
     ok = [loc for loc in locations if loc.get("geocode_status") == "ok"]
+    remaining_after = remaining_monthly_budget()
     print(
-        f"Geocoding complete: {len(to_geocode)} API calls made for {len(to_geocode)} unique addresses — "
-        f"{len(ok)} providers resolved, {len(failed)} providers failed (will retry next run)"
+        f"Geocoding complete: {len(to_geocode)} API calls made this run — "
+        f"{len(ok)} providers resolved, {len(failed)} providers failed (will retry next run). "
+        f"Monthly budget remaining: {remaining_after}/{GEOCODE_MONTHLY_BUDGET}"
     )
     if failed:
         print(f"  Failed addresses (billing/API issue — not bad addresses):")

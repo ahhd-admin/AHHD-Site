@@ -26,13 +26,17 @@ jobs:
           pip install -r requirements.txt
           playwright install chromium
 
-      # Persist geocode results across runs so already-geocoded addresses are
-      # never re-billed to the Geocoding API. Without this, the cache file
-      # starts empty every run and every provider gets re-geocoded nightly.
-      - name: Restore geocode cache
+      # Persist geocode results AND the monthly budget counter across runs.
+      # geocode_cache.json: already-geocoded addresses are never re-billed.
+      # geocode_monthly_budget.json: tracks calls made in the current
+      # calendar month so nightly runs self-throttle to stay inside the
+      # Geocoding API's free monthly tier (see geocode_helper.py).
+      - name: Restore geocode cache and monthly budget
         uses: actions/cache@v4
         with:
-          path: scrapers/geocode_cache.json
+          path: |
+            scrapers/geocode_cache.json
+            scrapers/geocode_monthly_budget.json
           key: geocode-cache-${{ github.run_id }}
           restore-keys: |
             geocode-cache-
