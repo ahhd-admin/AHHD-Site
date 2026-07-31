@@ -18,6 +18,16 @@ const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
 const DEFAULT_CENTER = { lat: 39.8283, lng: -95.5795 };
 const DEFAULT_ZOOM = 4.2;
 
+// "ahhd-provider-map" was a placeholder name, not a real Map ID -- Advanced
+// Markers require an actual Map ID registered in Google Cloud Console with
+// vector rendering enabled, or they fail to render (the base map still
+// loads fine either way, which is why this can look like "the map works but
+// pins don't"). Google's DEMO_MAP_ID works immediately with no Cloud
+// Console setup, for exactly this situation -- it's fine for now but shows
+// a small "for development purposes only" watermark and should be swapped
+// for a real registered Map ID before production launch.
+const MAP_ID = 'DEMO_MAP_ID';
+
 function MapContent({ locations, searchLocation, userCoords, radiusMiles }: MapSearchProps) {
   const map = useMap();
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
@@ -239,7 +249,7 @@ export default function MapSearch(props: MapSearchProps) {
           <Map
             defaultCenter={DEFAULT_CENTER}
             defaultZoom={DEFAULT_ZOOM}
-            mapId="ahhd-provider-map"
+            mapId={MAP_ID}
             gestureHandling="greedy"
             disableDefaultUI={false}
             scrollwheel={true}
