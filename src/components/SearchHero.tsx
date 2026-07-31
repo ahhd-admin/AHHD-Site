@@ -126,8 +126,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
           service_types:location_service_types(
             service_type:service_types(*)
           ),
-          accreditation_records(*),
-          display_order
+          accreditation_records(*)
         `)
         .eq('listing_status', 'published')
         .eq('accepts_public_display', true);
@@ -149,8 +148,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             service_types:location_service_types!inner(
               service_type:service_types!inner(*)
             ),
-            accreditation_records(*),
-            display_order
+            accreditation_records(*)
           `)
           .in('location_service_types.service_types.service_type_slug', services);
       }
@@ -313,15 +311,10 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
 
     return true;
   }).sort((a, b) => {
-    const aOrder = (a as any).display_order;
-    const bOrder = (b as any).display_order;
-
-    if (aOrder != null && bOrder != null) {
-      return aOrder - bOrder;
-    }
-    if (aOrder != null) return -1;
-    if (bOrder != null) return 1;
-
+    // display_order was never a real column on locations (it belongs to
+    // service_types) -- this always fell through to distance sorting in
+    // practice. If per-location manual ordering is wanted later, it needs
+    // a real column on locations or location_listing_settings first.
     if (a.distance === null && b.distance === null) return 0;
     if (a.distance === null) return 1;
     if (b.distance === null) return -1;
