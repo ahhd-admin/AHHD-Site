@@ -1,10 +1,11 @@
 import { MapPin, Phone, Globe, Shield, CheckCircle, Award, Star } from 'lucide-react';
 import type { LocationWithDetails } from '../types/database';
 import { formatDistance } from '../lib/geoUtils';
+import { buildProviderSlug } from '../lib/slug';
 
 interface ProviderCardProps {
-  location: LocationWithDetails & { distance?: number };
-  distance?: number;
+  location: LocationWithDetails & { distance?: number | null };
+  distance?: number | null;
 }
 
 export default function ProviderCard({ location, distance }: ProviderCardProps) {
@@ -18,7 +19,7 @@ export default function ProviderCard({ location, distance }: ProviderCardProps) 
 
   return (
     <a
-      href={`/provider/${location.location_id}`}
+      href={`/provider/${buildProviderSlug(location.organization?.organization_name || location.location_name || '', location.achc_source_id)}`}
       className={`card p-6 hover:shadow-xl transition-all duration-300 hover:-translate-y-1 block group relative ${isEnhanced ? 'ring-2 ring-amber-400' : ''}`}
     >
       {isEnhanced && (

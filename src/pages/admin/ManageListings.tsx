@@ -3,10 +3,12 @@ import { FileText, Search, CreditCard as Edit, Eye, Plus, LogOut } from 'lucide-
 import { supabase } from '../../lib/supabase';
 import ListingFormWizard from '../../components/ListingFormWizard';
 import { useAuth } from '../../contexts/AuthContext';
+import { buildProviderSlug } from '../../lib/slug';
 
 interface Location {
   location_id: string;
   location_name: string;
+  achc_source_id?: string;
   city: string;
   state: string;
   listing_status: string;
@@ -41,6 +43,7 @@ export default function ManageListings() {
       .select(`
         location_id,
         location_name,
+        achc_source_id,
         city,
         state,
         listing_status,
@@ -176,7 +179,7 @@ export default function ManageListings() {
                   </div>
                   <div className="flex gap-2">
                     <a
-                      href={`/provider/${location.location_id}`}
+                      href={`/provider/${buildProviderSlug(location.organization?.organization_name || location.location_name || '', location.achc_source_id)}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="border-2 border-neutral-300 text-neutral-700 hover:bg-neutral-50 px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2"

@@ -162,7 +162,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
     setHasSearched(true);
 
     if (placesLibrary) {
-      const geocoder = new placesLibrary.Geocoder();
+      const geocoder = new google.maps.Geocoder();
       geocoder.geocode({ placeId }, (results, status) => {
         if (status === 'OK' && results && results[0]) {
           const coords = {

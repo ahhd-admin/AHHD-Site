@@ -115,6 +115,8 @@ export interface Location {
   availability_24_7?: boolean;
   languages_spoken?: string[];
   special_programs?: string[];
+  achc_source_id?: string;
+  geocode_status?: string;
   created_at?: string;
   updated_at?: string;
 }

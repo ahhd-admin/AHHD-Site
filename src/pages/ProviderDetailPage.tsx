@@ -4,6 +4,7 @@ import Header from '../components/Header';
 import Footer from '../components/Footer';
 import { supabase } from '../lib/supabase';
 import type { LocationWithDetails } from '../types/database';
+import { parseAchcSourceIdFromSlug } from '../lib/slug';
 
 interface ProviderDetailPageProps {
   locationId?: string;
@@ -14,13 +15,18 @@ export default function ProviderDetailPage({ locationId }: ProviderDetailPagePro
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const id = locationId || window.location.pathname.split('/').pop();
-    if (id) {
-      loadProvider(id);
+    const slug = locationId || window.location.pathname.split('/').pop() || '';
+    const achcSourceId = parseAchcSourceIdFromSlug(slug);
+    if (achcSourceId) {
+      loadProvider(achcSourceId);
+    } else if (slug) {
+      // Fallback for old bare-UUID links (e.g. bookmarked before the slug
+      // format changed) -- treat the whole segment as a location_id.
+      loadProvider(slug, true);
     }
   }, [locationId]);
 
-  const loadProvider = async (id: string) => {
+  const loadProvider = async (id: string, byLocationId = false) => {
     setLoading(true);
 
     const { data, error } = await supabase
@@ -34,7 +40,7 @@ export default function ProviderDetailPage({ locationId }: ProviderDetailPagePro
         accreditation_records(*),
         listing_settings:location_listing_settings(*)
       `)
-      .eq('location_id', id)
+      .eq(byLocationId ? 'location_id' : 'achc_source_id', id)
       .maybeSingle();
 
     if (data && !error) {

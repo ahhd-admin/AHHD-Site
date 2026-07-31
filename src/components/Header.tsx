@@ -30,16 +30,7 @@ export default function Header() {
             >
               Find Care
             </a>
-            <a
-              href="/about"
-              className={`font-medium ${
-                currentPath === '/about'
-                  ? 'text-primary-600 border-b-2 border-primary-600 pb-1'
-                  : 'text-navy-700 hover:text-primary-600'
-              }`}
-            >
-              About
-            </a>
+            {/* "About" link removed -- /about has no route yet */}
           </div>
 
           <button
@@ -68,16 +59,7 @@ export default function Header() {
               >
                 Find Care
               </a>
-              <a
-                href="/about"
-                className={`font-medium py-2 ${
-                  currentPath === '/about'
-                    ? 'text-primary-600'
-                    : 'text-navy-700 hover:text-primary-600'
-                }`}
-              >
-                About
-              </a>
+              {/* "About" link removed -- /about has no route yet */}
             </div>
           </div>
         )}

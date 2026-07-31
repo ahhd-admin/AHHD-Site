@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { APIProvider, Map, AdvancedMarker, InfoWindow, useMap } from '@vis.gl/react-google-maps';
 import { Search } from 'lucide-react';
 import type { LocationWithDetails } from '../types/database';
+import { buildProviderSlug } from '../lib/slug';
 import { formatDistance } from '../lib/geoUtils';
 
 interface MapSearchProps {
@@ -223,7 +224,7 @@ function MapContent({ locations, searchLocation, userCoords, radiusMiles, onSear
                 {location.organization?.organization_name}
               </h3>
               <p className="text-sm text-neutral-600 mb-2">
-                {location.address_line1}<br />
+                {location.address_line_1}<br />
                 {location.city}, {location.state} {location.postal_code}
               </p>
               {(location as any).distance && (
@@ -231,14 +232,14 @@ function MapContent({ locations, searchLocation, userCoords, radiusMiles, onSear
                   {formatDistance((location as any).distance)} away
                 </p>
               )}
-              {location.phone_number && (
+              {location.public_phone && (
                 <p className="text-sm text-neutral-600 mb-2">
-                  {location.phone_number}
+                  {location.public_phone}
                 </p>
               )}
               <button
                 onClick={() => {
-                  window.location.href = `/provider/${location.location_id}`;
+                  window.location.href = `/provider/${buildProviderSlug(location.organization?.organization_name || location.location_name || '', location.achc_source_id)}`;
                 }}
                 className="mt-2 w-full text-center px-3 py-1.5 bg-primary-500 text-white rounded-md text-sm font-medium hover:bg-primary-600 transition-colors"
               >
@@ -304,7 +305,7 @@ export default function MapSearch(props: MapSearchProps) {
                 key={location.location_id}
                 onClick={() => {
                   if (location.latitude && location.longitude) {
-                    window.location.href = `/provider/${location.location_id}`;
+                    window.location.href = `/provider/${buildProviderSlug(location.organization?.organization_name || location.location_name || '', location.achc_source_id)}`;
                   }
                 }}
                 className="w-full text-left p-2.5 md:p-3 bg-white rounded-lg border transition-all group active:scale-98 border-neutral-200 hover:border-primary-400 hover:shadow-md active:border-primary-500"
@@ -315,16 +316,16 @@ export default function MapSearch(props: MapSearchProps) {
                       {location.organization?.organization_name}
                     </h4>
                     <p className="text-xs md:text-sm text-neutral-600">
-                      {location.address_line1}, {location.city}, {location.state}
+                      {location.address_line_1}, {location.city}, {location.state}
                     </p>
                     {(location as any).distance && (
                       <p className="text-xs text-primary-600 font-medium mt-1">
                         {formatDistance((location as any).distance)} away
                       </p>
                     )}
-                    {location.phone_number && (
+                    {location.public_phone && (
                       <p className="text-xs text-neutral-500 mt-1">
-                        {location.phone_number}
+                        {location.public_phone}
                       </p>
                     )}
                   </div>
