@@ -38,17 +38,16 @@ jobs:
             geocode-cache-
 
       # Note: normalization logic is unit-tested separately in the test-normalization workflow
-      # DIAGNOSTIC PASS: full national pull, but geocoding/Supabase/Sheets are
-      # all off. This only scrapes, normalizes, and reports the dedup counts
-      # (raw rows -> normalized providers -> unique addresses) so the real
-      # geocoding call count can be confirmed before anything is billed or
-      # written to production. Flip ENABLE_GEOCODING / ENABLE_DIRECT_SUPABASE
-      # back on for the real run once the numbers check out.
+      # MVP-SCOPE DIAGNOSTIC: scrape only the three home-based-care programs
+      # (Home Care, Home Health, Hospice) to see the real deduplicated count
+      # for the site's actual content focus. Zero cost -- geocoding/Supabase/
+      # Sheets all off, this only scrapes/normalizes/reports.
       - name: Run ACHC scraper and write raw + merged tabs
         working-directory: ./scrapers
         env:
           LIMIT_LOCATIONS: 0
           TEST_MODE: "true"
+          TEST_PROGRAMS: "Home Care,Home Health,Hospice"
           SCRAPER_SECRET: ${{ secrets.SCRAPER_SECRET }}
           GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
           ENABLE_GEOCODING: "false"
