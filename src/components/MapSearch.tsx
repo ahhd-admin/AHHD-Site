@@ -1,6 +1,5 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { APIProvider, Map, AdvancedMarker, InfoWindow, useMap } from '@vis.gl/react-google-maps';
-import { Search } from 'lucide-react';
 import type { LocationWithDetails } from '../types/database';
 import { buildProviderSlug } from '../lib/slug';
 import { formatDistance } from '../lib/geoUtils';
@@ -10,7 +9,6 @@ interface MapSearchProps {
   searchLocation?: string;
   userCoords?: { lat: number; lng: number } | null;
   radiusMiles?: number;
-  onSearchThisArea?: (center: { lat: number; lng: number }, bounds: google.maps.LatLngBounds) => void;
 }
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
@@ -18,17 +16,12 @@ const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
 const DEFAULT_CENTER = { lat: 39.8283, lng: -95.5795 };
 const DEFAULT_ZOOM = 4.2;
 
-function MapContent({ locations, searchLocation, userCoords, radiusMiles, onSearchThisArea }: MapSearchProps) {
+function MapContent({ locations, searchLocation, userCoords, radiusMiles }: MapSearchProps) {
   const map = useMap();
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
-  const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>(DEFAULT_CENTER);
-  const [mapZoom, setMapZoom] = useState<number>(DEFAULT_ZOOM);
-  const [showSearchArea, setShowSearchArea] = useState(false);
-  const [mapMoved, setMapMoved] = useState(false);
 
   const hasZoomedToSearch = useRef<string>('');
   const hasZoomedToUser = useRef<string>('');
-  const userInteracted = useRef(false);
   const radiusCircleRef = useRef<google.maps.Circle | null>(null);
 
   const locationsWithCoords = locations.filter(
@@ -73,9 +66,6 @@ function MapContent({ locations, searchLocation, userCoords, radiusMiles, onSear
         hasZoomedToSearch.current = '';
 
         const newZoom = 11;
-        setMapCenter(userCoords);
-        setMapZoom(newZoom);
-
         map.panTo(userCoords);
         map.setZoom(newZoom);
       }
@@ -116,9 +106,6 @@ function MapContent({ locations, searchLocation, userCoords, radiusMiles, onSear
             }
           }
 
-          setMapCenter(newCenter);
-          setMapZoom(zoomLevel);
-
           map.panTo(newCenter);
           map.setZoom(zoomLevel);
         }
@@ -141,58 +128,9 @@ function MapContent({ locations, searchLocation, userCoords, radiusMiles, onSear
     }
   };
 
-  const handleMapIdle = useCallback(() => {
-    if (!userInteracted.current) {
-      userInteracted.current = true;
-      return;
-    }
-
-    if (map) {
-      const center = map.getCenter();
-      const zoom = map.getZoom();
-
-      if (center && zoom) {
-        const currentCenter = { lat: center.lat(), lng: center.lng() };
-        const distance = Math.sqrt(
-          Math.pow(currentCenter.lat - mapCenter.lat, 2) +
-          Math.pow(currentCenter.lng - mapCenter.lng, 2)
-        );
-
-        if (distance > 0.1 || Math.abs(zoom - mapZoom) > 0.5) {
-          setMapMoved(true);
-          setShowSearchArea(true);
-        }
-      }
-    }
-  }, [mapCenter, mapZoom, map]);
-
-  const handleSearchThisArea = useCallback(() => {
-    if (map) {
-      const center = map.getCenter();
-      const bounds = map.getBounds();
-
-      if (center && bounds && onSearchThisArea) {
-        onSearchThisArea({ lat: center.lat(), lng: center.lng() }, bounds);
-      }
-
-      setShowSearchArea(false);
-      setMapMoved(false);
-      userInteracted.current = false;
-    }
-  }, [onSearchThisArea, map]);
-
   return (
     <>
-      {showSearchArea && (
-        <button
-          onClick={handleSearchThisArea}
-          className="absolute top-4 left-1/2 -translate-x-1/2 z-[100] bg-white shadow-lg rounded-full px-6 py-3 flex items-center gap-2 text-navy-800 font-semibold hover:bg-neutral-50 transition-all border-2 border-neutral-200 hover:border-primary-500 active:scale-95"
-        >
-          <Search className="w-4 h-4" />
-          Search this area
-        </button>
-      )}
-            {locationsWithCoords.map((location) => (
+      {locationsWithCoords.map((location) => (
               <AdvancedMarker
                 key={location.location_id}
                 position={{ lat: location.latitude!, lng: location.longitude! }}

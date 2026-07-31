@@ -88,8 +88,8 @@ export interface Location {
   postal_code: string;
   country?: string;
   county?: string;
-  latitude?: number;
-  longitude?: number;
+  latitude?: number | null;
+  longitude?: number | null;
   public_phone?: string;
   public_email?: string;
   website_url?: string;
