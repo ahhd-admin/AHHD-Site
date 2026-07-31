@@ -1307,6 +1307,12 @@ async def main():
     else:
         print("AJAX accreditation disabled (ENABLE_AJAX_ACCREDITATION=false)")
 
+    dump_path = os.getenv("DUMP_NORMALIZED_JSON_PATH", "").strip()
+    if dump_path:
+        with open(dump_path, "w", encoding="utf-8") as f:
+            json.dump(normalized, f, indent=2)
+        print(f"Dumped {len(normalized)} normalized rows to {dump_path} (DUMP_NORMALIZED_JSON_PATH)")
+
     # Write enriched normalized rows directly to Supabase (bypasses Google Sheets
     # 6-minute timeout that triggers when AJAX services + website data is included).
     if ENABLE_DIRECT_SUPABASE:

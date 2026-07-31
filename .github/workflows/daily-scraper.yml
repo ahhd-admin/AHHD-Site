@@ -45,7 +45,10 @@ jobs:
       # MVP-SCOPE DIAGNOSTIC: scrape only the three home-based-care programs
       # (Home Care, Home Health, Hospice) to see the real deduplicated count
       # for the site's actual content focus. Zero cost -- geocoding/Supabase/
-      # Sheets all off, this only scrapes/normalizes/reports.
+      # Sheets all off, this only scrapes/normalizes/reports. Also dumps the
+      # full normalized list to a JSON artifact for manual sampling/testing
+      # (e.g. the website-search-link accuracy test) -- remove DUMP_NORMALIZED_JSON_PATH
+      # and the upload-artifact step below once that's no longer needed.
       - name: Run ACHC scraper and write raw + merged tabs
         working-directory: ./scrapers
         env:
@@ -57,8 +60,16 @@ jobs:
           ENABLE_GEOCODING: "false"
           ENABLE_WEBSITE_ENRICHMENT: "false"
           ENABLE_DIRECT_SUPABASE: "false"
+          DUMP_NORMALIZED_JSON_PATH: "normalized_dump.json"
         run: |
           python run_scraper_and_merge.py
+
+      - name: Upload normalized data dump
+        uses: actions/upload-artifact@v4
+        with:
+          name: normalized-dump
+          path: scrapers/normalized_dump.json
+          retention-days: 7
 
       # Production Supabase writes happen directly from the scraper
       # (write_to_supabase_direct, ENABLE_DIRECT_SUPABASE) above. Google
