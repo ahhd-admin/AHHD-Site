@@ -16,16 +16,6 @@ const fakeMap = {
   getBounds: vi.fn(),
 };
 
-// MarkerClusterer builds real Google Maps overlay internals on construction
-// that don't exist in jsdom; the fake below only needs the two methods
-// MapSearch actually calls (addMarkers/clearMarkers).
-vi.mock('@googlemaps/markerclusterer', () => ({
-  MarkerClusterer: class {
-    addMarkers = vi.fn();
-    clearMarkers = vi.fn();
-  },
-}));
-
 vi.mock('@vis.gl/react-google-maps', () => ({
   APIProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   Map: ({ children }: { children: React.ReactNode }) => <div data-testid="map">{children}</div>,
