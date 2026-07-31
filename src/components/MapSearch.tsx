@@ -1,5 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { APIProvider, Map, AdvancedMarker, InfoWindow, useMap } from '@vis.gl/react-google-maps';
+import { MarkerClusterer } from '@googlemaps/markerclusterer';
+import type { Marker } from '@googlemaps/markerclusterer';
 import type { LocationWithDetails } from '../types/database';
 import { buildProviderSlug } from '../lib/slug';
 import { formatDistance } from '../lib/geoUtils';
@@ -128,11 +130,44 @@ function MapContent({ locations, searchLocation, userCoords, radiusMiles }: MapS
     }
   };
 
+  // With up to thousands of locations now loadable at once (see
+  // RESULTS_LIMIT in SearchHero), individual unclustered markers would be
+  // slow to render and unreadable at low zoom. MarkerClusterer groups
+  // nearby markers and re-clusters automatically as the map is panned/
+  // zoomed; @googlemaps/markerclusterer was already a dependency but had
+  // never actually been wired up to the map.
+  const markersRef = useRef<Map<string, Marker>>(new globalThis.Map());
+  const clustererRef = useRef<MarkerClusterer | null>(null);
+
+  useEffect(() => {
+    if (!map) return;
+    if (!clustererRef.current) {
+      clustererRef.current = new MarkerClusterer({ map });
+    }
+    return () => {
+      clustererRef.current?.clearMarkers();
+    };
+  }, [map]);
+
+  useEffect(() => {
+    clustererRef.current?.clearMarkers();
+    clustererRef.current?.addMarkers(Array.from(markersRef.current.values()));
+  }, [locationsWithCoords]);
+
+  const setMarkerRef = (marker: Marker | null, key: string) => {
+    if (marker) {
+      markersRef.current.set(key, marker);
+    } else {
+      markersRef.current.delete(key);
+    }
+  };
+
   return (
     <>
       {locationsWithCoords.map((location) => (
               <AdvancedMarker
                 key={location.location_id}
+                ref={(marker) => setMarkerRef(marker, location.location_id)}
                 position={{ lat: location.latitude!, lng: location.longitude! }}
                 onClick={() => handlePinClick(location)}
               >

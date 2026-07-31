@@ -10,13 +10,29 @@ import { SERVICE_CATEGORIES, ALL_SERVICES } from '../lib/serviceCategories';
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
 
+// A country-level search ("USA", "United States") should show nationwide
+// results, not be treated as a literal city/state/zip substring to match
+// against -- no real city, state abbreviation, or zip contains "usa".
+const BROAD_LOCATION_TERMS = new Set(['usa', 'us', 'u.s.', 'u.s.a.', 'united states', 'united states of america', 'america']);
+
+// Cap on rows fetched per search -- high enough to cover the full current
+// dataset (~7,200 MVP-scope locations) so "no filter" genuinely means "show
+// everything," not an arbitrary small slice of it.
+const RESULTS_LIMIT = 8000;
+
 interface SearchHeroProps {
   onSearch?: (location: string, serviceType?: string) => void;
 }
 
 function SearchHeroContent({ onSearch }: SearchHeroProps) {
   const [location, setLocation] = useState('');
-  const [selectedServices, setSelectedServices] = useState<string[]>([]);
+  // Defaults to every MVP-scope service rather than none, so the initial
+  // view (and any search with no service checkboxes touched) is naturally
+  // scoped to real, current data -- there's also older, unrelated data in
+  // the same table (different service categories, months out of date) that
+  // happens to share the same published/publicly-displayable flags; an
+  // empty filter would show that too.
+  const [selectedServices, setSelectedServices] = useState<string[]>(Object.keys(ALL_SERVICES));
   const [showFilterMenu, setShowFilterMenu] = useState(false);
   const filterMenuRef = useRef<HTMLDivElement>(null);
   const [viewMode, setViewMode] = useState<'map' | 'list'>('map');
@@ -33,9 +49,15 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   const autocompleteService = useRef<google.maps.places.AutocompleteService | null>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
 
+  // Auto-search as you type/select filters, debounced -- no need to hit
+  // Search first. handleSearch (button/Enter) still runs on top of this for
+  // geocoding-based map centering and "near me" distance sorting.
   useEffect(() => {
-    loadLocations();
-  }, []);
+    const timer = setTimeout(() => {
+      loadLocations(location, selectedServices);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [location, selectedServices]);
 
   useEffect(() => {
     if (placesLibrary) {
@@ -93,10 +115,10 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const loadLocations = async () => {
+  const loadLocations = async (searchText: string, services: string[]) => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('locations')
         .select(`
           *,
@@ -108,8 +130,32 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
           display_order
         `)
         .eq('listing_status', 'published')
-        .eq('accepts_public_display', true)
-        .limit(30);
+        .eq('accepts_public_display', true);
+
+      const trimmed = searchText.trim();
+      if (trimmed && !BROAD_LOCATION_TERMS.has(trimmed.toLowerCase())) {
+        const term = trimmed.replace(/[%,]/g, '');
+        query = query.or(`city.ilike.%${term}%,state.ilike.%${term}%,postal_code.ilike.%${term}%`);
+      }
+
+      if (services.length > 0) {
+        // Filtering through a nested embed requires an inner join on both
+        // hops, referenced by table name (not the select alias) in the
+        // filter path -- verified directly against the live schema.
+        query = query
+          .select(`
+            *,
+            organization:organizations(*),
+            service_types:location_service_types!inner(
+              service_type:service_types!inner(*)
+            ),
+            accreditation_records(*),
+            display_order
+          `)
+          .in('location_service_types.service_types.service_type_slug', services);
+      }
+
+      const { data, error } = await query.limit(RESULTS_LIMIT);
 
       if (error) throw error;
 
@@ -170,7 +216,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             lng: results[0].geometry.location.lng()
           };
           setUserCoords(coords);
-          loadLocations();
+          loadLocations(description, selectedServices);
         }
       });
     }
@@ -199,7 +245,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
         console.error('Geocoding error:', error);
       }
     }
-    loadLocations();
+    loadLocations(location, selectedServices);
   };
 
   const handleGeolocation = () => {
@@ -254,28 +300,11 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
     return { ...loc, distance };
   });
 
+  // Location text and service-type filtering already happened server-side
+  // in loadLocations -- `locations` only ever contains matching rows, so
+  // this just applies the distance radius (which needs the client-computed
+  // distance above) and sorts.
   const filteredLocations = locationsWithDistance.filter((loc) => {
-    if (location.trim()) {
-      const search = location.toLowerCase();
-      const matchesCity = loc.city.toLowerCase().includes(search);
-      const matchesState = loc.state.toLowerCase().includes(search);
-      const matchesZip = loc.postal_code.includes(search);
-
-      if (!matchesCity && !matchesState && !matchesZip) {
-        return false;
-      }
-    }
-
-    if (selectedServices.length > 0) {
-      const locationServiceSlugs = loc.service_types?.map((st) => st.service_type_slug) || [];
-      const hasMatchingService = selectedServices.some((slug) =>
-        locationServiceSlugs.includes(slug)
-      );
-      if (!hasMatchingService) {
-        return false;
-      }
-    }
-
     if (distanceRadius < 999999 && loc.distance !== null) {
       if (loc.distance > distanceRadius) {
         return false;
