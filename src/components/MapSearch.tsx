@@ -229,11 +229,18 @@ export default function MapSearch(props: MapSearchProps) {
             fullscreenControl={true}
             streetViewControl={false}
             zoomControl={true}
+            // Wide enough to include Alaska and Hawaii (both have real
+            // providers in the data) in addition to the contiguous states --
+            // the old bounds (24.5-49.5N, -125 to -66) were continental-US
+            // only and actively blocked panning to either. The default
+            // view still opens centered on the contiguous states (see
+            // DEFAULT_CENTER/DEFAULT_ZOOM below); this only affects how far
+            // someone can pan/zoom to reach AK/HI when they need to.
             restriction={{
               latLngBounds: {
-                north: 49.5,
-                south: 24.5,
-                west: -125.0,
+                north: 72,
+                south: 18,
+                west: -170.0,
                 east: -66.0
               },
               strictBounds: false
