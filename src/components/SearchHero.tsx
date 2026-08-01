@@ -288,6 +288,22 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
     setSelectedServices(allServicesSelected ? [] : allServiceSlugs);
   };
 
+  // Submitting with zero care types checked used to search zero services
+  // (by design -- see loadLocations), which reads as "the search is
+  // broken" rather than "you forgot to pick something." Since a location
+  // search with no care type filter at all is a perfectly reasonable
+  // thing to want, submitting now falls back to searching every service
+  // instead -- and visibly checks those boxes, so the UI honestly
+  // reflects what's actually being searched rather than a silent
+  // fallback. Returns the effective list synchronously (setSelectedServices
+  // won't be reflected until the next render) for immediate use in the
+  // same submit.
+  const ensureServicesSelected = (): string[] => {
+    if (selectedServices.length > 0) return selectedServices;
+    setSelectedServices(allServiceSlugs);
+    return allServiceSlugs;
+  };
+
   // Shared between the centered hero card (compact) and the post-search
   // filters row (full-size) so Type of Care can be picked before the very
   // first search, not just to refine an already-populated map.
@@ -400,7 +416,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
         console.error('Geocoding error:', error);
       }
     }
-    loadLocations(location, selectedServices);
+    loadLocations(location, ensureServicesSelected());
   };
 
   const handleGeolocation = () => {
@@ -440,7 +456,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             // read `location` from this closure, so it would search with
             // the previous (likely empty) text. Using the just-resolved
             // address directly instead.
-            loadLocations(cityResult.formatted_address, selectedServices);
+            loadLocations(cityResult.formatted_address, ensureServicesSelected());
           }
         } catch (error) {
           console.error('Reverse geocoding error:', error);
@@ -487,12 +503,17 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
     return a.distance - b.distance;
   });
 
-  // Shared between the map-overlay layout and the grid layout below --
-  // defined once so the two don't drift out of sync with each other.
-  const searchCard = (
-    <div className="bg-white rounded-xl shadow-2xl border border-neutral-200 p-3">
+  // The search/filter panel -- a static column now, not an overlay. This
+  // replaced a floating card that sat on top of the map/grid: it kept
+  // fighting for the right size/position and, in grid view, covered the
+  // actual results. A persistent side panel (the pattern Zillow/Redfin/
+  // Realtor.com actually use on their results pages, as opposed to their
+  // marketing homepages) sidesteps all of that -- it's a normal,
+  // non-overlapping region, so there's no sizing/z-index tradeoff to make.
+  const searchPanel = (
+    <div className="bg-white rounded-2xl shadow-md border border-neutral-200 p-4">
       {!hasSubmittedSearch && (
-        <div className="text-center mb-2">
+        <div className="mb-3">
           <div className="inline-flex items-center justify-center w-9 h-9 bg-primary-100 rounded-xl mb-1.5">
             <MapPin className="w-5 h-5 text-navy-800" />
           </div>
@@ -501,12 +522,8 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
         </div>
       )}
 
-      {/* Input gets its own full-width row, buttons wrap to a row below on
-          narrow screens -- previously the input shared a row with two
-          buttons even on small phones, squeezing it down far enough that
-          the placeholder text got clipped. */}
-      <div className="flex flex-col sm:flex-row gap-2">
-        <div className="flex-1 relative">
+      <div className="flex flex-col gap-2">
+        <div className="relative">
           <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 w-4 h-4 z-10 pointer-events-none" />
           <input
             ref={inputRef}
@@ -522,7 +539,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
               if (!value.trim()) {
                 // Cleared back to empty -- fully reset to the idle prompt
                 // state rather than leaving stale results showing behind
-                // a bar that no longer reflects it.
+                // a panel that no longer reflects it.
                 setHasSubmittedSearch(false);
               }
             }}
@@ -563,7 +580,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
           <button
             onClick={handleGeolocation}
             disabled={gettingLocation}
-            className="btn-outline flex-1 sm:flex-none px-3 h-[48px] flex items-center justify-center gap-1.5 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+            className="btn-outline flex-1 px-3 h-[44px] flex items-center justify-center gap-1.5 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
             aria-label="Use my location"
             title="Use my location"
           >
@@ -573,7 +590,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
 
           <button
             onClick={handleSearch}
-            className="btn-primary flex-1 sm:flex-none px-3 sm:px-4 h-[48px] flex items-center justify-center gap-1.5 whitespace-nowrap"
+            className="btn-primary flex-1 px-3 h-[44px] flex items-center justify-center gap-1.5 whitespace-nowrap"
           >
             <Search className="w-4 h-4" />
             <span className="text-sm">Search</span>
@@ -583,65 +600,30 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
 
       {/* Type of Care lives here unconditionally (both before and after
           search) -- it's part of what's being searched for, not a
-          refinement to bolt on afterward. Radius and the map/grid toggle
-          join it once there's something to refine. Condensed spacing
-          (mt-1.5, shorter rows) throughout this and the row below -- this
-          card overlays the map itself, so its height directly eats into
-          how much of the map is visible. */}
-      <fieldset className="mt-1.5 border-0 p-0 m-0 min-w-0">
+          refinement to bolt on afterward. */}
+      <fieldset className="mt-3 border-0 p-0 m-0 min-w-0">
         <legend className="text-xs font-semibold text-navy-800 mb-1">Type of Care</legend>
         {renderCareTypeCheckboxes(true)}
       </fieldset>
 
       {hasSubmittedSearch && (
-        <div className="mt-1.5 flex gap-2 items-end">
-          <div className="flex-1 sm:flex-none sm:w-[130px]">
-            <label htmlFor="radius-select" className="block text-xs font-semibold text-navy-800 mb-1">
-              Radius
-            </label>
-            <select
-              id="radius-select"
-              value={distanceRadius}
-              onChange={(e) => setDistanceRadius(Number(e.target.value))}
-              className="w-full px-3 h-[34px] text-sm border-2 border-neutral-300 rounded-lg focus:outline-none focus:ring-4 focus:ring-primary-200 focus:border-primary-500 transition-all bg-white text-neutral-800 font-medium"
-            >
-              <option value={999999}>Any distance</option>
-              <option value={5}>Within 5 mi</option>
-              <option value={10}>Within 10 mi</option>
-              <option value={25}>Within 25 mi</option>
-              <option value={50}>Within 50 mi</option>
-              <option value={100}>Within 100 mi</option>
-            </select>
-          </div>
-
-          <div className="flex items-center gap-1 bg-neutral-100 rounded-lg p-1 h-[34px]">
-            <button
-              onClick={() => setViewMode('map')}
-              className={`flex items-center justify-center w-7 sm:w-auto sm:gap-1.5 sm:px-3 h-full rounded-md text-sm font-medium transition-all ${
-                viewMode === 'map'
-                  ? 'bg-white text-navy-800 shadow-sm'
-                  : 'text-neutral-600 hover:text-navy-800'
-              }`}
-              aria-label="Map view"
-              aria-pressed={viewMode === 'map'}
-            >
-              <Map className="w-4 h-4" />
-              <span className="hidden sm:inline">Map</span>
-            </button>
-            <button
-              onClick={() => setViewMode('list')}
-              className={`flex items-center justify-center w-7 sm:w-auto sm:gap-1.5 sm:px-3 h-full rounded-md text-sm font-medium transition-all ${
-                viewMode === 'list'
-                  ? 'bg-white text-navy-800 shadow-sm'
-                  : 'text-neutral-600 hover:text-navy-800'
-              }`}
-              aria-label="Grid view"
-              aria-pressed={viewMode === 'list'}
-            >
-              <LayoutGrid className="w-4 h-4" />
-              <span className="hidden sm:inline">Grid</span>
-            </button>
-          </div>
+        <div className="mt-3">
+          <label htmlFor="radius-select" className="block text-xs font-semibold text-navy-800 mb-1">
+            Radius
+          </label>
+          <select
+            id="radius-select"
+            value={distanceRadius}
+            onChange={(e) => setDistanceRadius(Number(e.target.value))}
+            className="w-full px-3 h-[38px] text-sm border-2 border-neutral-300 rounded-lg focus:outline-none focus:ring-4 focus:ring-primary-200 focus:border-primary-500 transition-all bg-white text-neutral-800 font-medium"
+          >
+            <option value={999999}>Any distance</option>
+            <option value={5}>Within 5 mi</option>
+            <option value={10}>Within 10 mi</option>
+            <option value={25}>Within 25 mi</option>
+            <option value={50}>Within 50 mi</option>
+            <option value={100}>Within 100 mi</option>
+          </select>
         </div>
       )}
     </div>
@@ -660,27 +642,59 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
           </p>
         </div>
 
-        {/* Grid view gets the search card in normal document flow above
-            the cards -- it used to always float as an overlay, which in
-            grid view meant it sat on top of (and hid) the first row of
-            results instead of just the map. Map view (and the pre-search
-            empty state, which always shows the map) keeps the floating
-            overlay -- that's the map-first design the overlay was for. */}
-        {viewMode === 'list' && hasSubmittedSearch && !loading ? (
-          <div className="rounded-2xl overflow-hidden shadow-md border border-neutral-200 bg-white">
-            <div className="p-3 border-b border-neutral-200 bg-neutral-50">{searchCard}</div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4 min-h-[400px] bg-neutral-50">
-              {filteredLocations.map((loc) => (
-                <ProviderCard key={loc.location_id} location={loc} />
-              ))}
-            </div>
+        <div className="flex flex-col lg:flex-row gap-4">
+          <div className="w-full lg:w-[300px] lg:flex-shrink-0">
+            <div className="lg:sticky lg:top-4">{searchPanel}</div>
           </div>
-        ) : (
-          <div className="relative rounded-2xl overflow-hidden shadow-md border border-neutral-200 bg-white">
-            <div className={!hasSubmittedSearch ? 'pointer-events-none' : ''}>
+
+          <div className="flex-1 min-w-0">
+            {hasSubmittedSearch && !loading && (
+              <div className="flex items-center justify-between gap-3 mb-2 px-1">
+                <p className="text-sm text-neutral-600">
+                  {filteredLocations.length} accredited {filteredLocations.length === 1 ? 'provider' : 'providers'}
+                  {location && ` near ${location}`}
+                </p>
+                <div className="flex items-center gap-1 bg-neutral-100 rounded-lg p-1 h-[34px] flex-shrink-0">
+                  <button
+                    onClick={() => setViewMode('map')}
+                    className={`flex items-center justify-center w-7 sm:w-auto sm:gap-1.5 sm:px-3 h-full rounded-md text-sm font-medium transition-all ${
+                      viewMode === 'map'
+                        ? 'bg-white text-navy-800 shadow-sm'
+                        : 'text-neutral-600 hover:text-navy-800'
+                    }`}
+                    aria-label="Map view"
+                    aria-pressed={viewMode === 'map'}
+                  >
+                    <Map className="w-4 h-4" />
+                    <span className="hidden sm:inline">Map</span>
+                  </button>
+                  <button
+                    onClick={() => setViewMode('list')}
+                    className={`flex items-center justify-center w-7 sm:w-auto sm:gap-1.5 sm:px-3 h-full rounded-md text-sm font-medium transition-all ${
+                      viewMode === 'list'
+                        ? 'bg-white text-navy-800 shadow-sm'
+                        : 'text-neutral-600 hover:text-navy-800'
+                    }`}
+                    aria-label="Grid view"
+                    aria-pressed={viewMode === 'list'}
+                  >
+                    <LayoutGrid className="w-4 h-4" />
+                    <span className="hidden sm:inline">Grid</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="rounded-2xl overflow-hidden shadow-md border border-neutral-200 bg-white">
               {loading ? (
                 <div className="h-[500px] md:h-[600px] flex items-center justify-center bg-neutral-50">
                   <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-primary-200 border-t-primary-600"></div>
+                </div>
+              ) : viewMode === 'list' && hasSubmittedSearch ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 min-h-[500px] bg-neutral-50">
+                  {filteredLocations.map((loc) => (
+                    <ProviderCard key={loc.location_id} location={loc} />
+                  ))}
                 </div>
               ) : (
                 <MapSearch
@@ -692,43 +706,15 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
               )}
             </div>
 
-            {!hasSubmittedSearch && !loading && (
-              <div className="absolute inset-0 bg-white/60" aria-hidden="true" />
+            {hasSubmittedSearch && filteredLocations.length === 0 && !loading && (
+              <div className="mt-4 text-center">
+                <p className="text-neutral-600">
+                  No providers found matching your criteria. Try adjusting your filters or search location.
+                </p>
+              </div>
             )}
-
-            {/* Same width (max-w-2xl) in both states now -- narrower felt
-                cramped in the centered pre-search view. Only the position
-                changes: centered before a search, pinned to the upper
-                left after (avoids the map's native fullscreen control,
-                which Google places top-right by default). */}
-            <div
-              className={`absolute z-20 w-[calc(100%-1.5rem)] max-w-2xl transition-all duration-300 ${
-                hasSubmittedSearch
-                  ? 'top-3 left-3'
-                  : 'top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2'
-              }`}
-            >
-              {searchCard}
-            </div>
           </div>
-        )}
-
-        {hasSubmittedSearch && filteredLocations.length === 0 && !loading && (
-          <div className="mt-6 text-center">
-            <p className="text-neutral-600">
-              No providers found matching your criteria. Try adjusting your filters or search location.
-            </p>
-          </div>
-        )}
-
-        {filteredLocations.length > 0 && (
-          <div className="mt-6 text-center">
-            <p className="text-sm text-neutral-500">
-              Showing {filteredLocations.length} accredited {filteredLocations.length === 1 ? 'provider' : 'providers'}
-              {location && ` near ${location}`}
-            </p>
-          </div>
-        )}
+        </div>
       </div>
     </section>
   );
