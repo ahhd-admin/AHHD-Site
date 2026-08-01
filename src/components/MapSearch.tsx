@@ -196,11 +196,15 @@ function MapContent({ locations, userCoords, searchBounds, radiusMiles }: MapSea
     setSelectedLocationId(location.location_id);
     if (location.latitude && location.longitude && map) {
       const newCenter = { lat: location.latitude, lng: location.longitude };
-      // Jumping the zoom level here is often a big jump (e.g. from a
-      // nationwide zoom straight to 14), which needs many new tile levels
-      // either way -- moveCamera at least avoids adding a separate
-      // animated pan on top of that tile-loading wait.
-      map.moveCamera({ center: newCenter, zoom: 14 });
+      // Google's Maps JS API doesn't expose a way to control the zoom
+      // animation's speed directly -- that's internal to the renderer. The
+      // two real levers are how large a zoom jump is requested (fewer new
+      // tile levels to fetch/render reads as snappier) and network/tile
+      // load time, which isn't controllable client-side. Pulled the target
+      // back from 14 to 13 -- still close enough to read the immediate
+      // area, but one fewer tile level to load on every click, especially
+      // noticeable jumping from the unsearched nationwide default view.
+      map.moveCamera({ center: newCenter, zoom: 13 });
     }
   };
 
