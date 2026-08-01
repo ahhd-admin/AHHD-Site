@@ -26,6 +26,18 @@ interface MapSearchProps {
   // fallback bounding-box rectangle during that window instead of drawing
   // it immediately and replacing it moments later.
   boundaryLoading?: boolean;
+  // Which kind of search this is -- city/state searches always attempt a
+  // real traced boundary (see boundaryLoading above) and should show
+  // *only* that trace or nothing at all, never the bounding-box rectangle
+  // fallback: the rectangle is a plain lat/lng rectangle, not the region's
+  // real shape, and for an odd-shaped state (Maine) or a city hugging
+  // another state's border, that rectangle visibly includes neighboring
+  // territory that has nothing to do with the search -- confirmed live
+  // (Quebec/New Hampshire inside Maine's own bounding rectangle). ZIP/
+  // address searches never attempt a trace at all (see shouldTraceBoundary
+  // in SearchHero.tsx), so the rectangle is their only, and reasonably
+  // accurate, region indicator -- unaffected by this.
+  searchRegionScale?: 'state' | 'city' | 'zip' | 'address' | null;
   radiusMiles?: number;
   hoveredLocationId?: string | null;
   // Bumped only when a search is actually (re-)submitted (Search/Enter,
@@ -51,7 +63,7 @@ const DEFAULT_ZOOM = 4.2;
 // for a real registered Map ID before production launch.
 const MAP_ID = 'DEMO_MAP_ID';
 
-function MapContent({ locations, userCoords, searchBounds, boundaryPolygon, boundaryLoading, radiusMiles, hoveredLocationId, searchGeneration }: MapSearchProps) {
+function MapContent({ locations, userCoords, searchBounds, boundaryPolygon, boundaryLoading, searchRegionScale, radiusMiles, hoveredLocationId, searchGeneration }: MapSearchProps) {
   const map = useMap();
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
 
@@ -139,7 +151,8 @@ function MapContent({ locations, userCoords, searchBounds, boundaryPolygon, boun
       searchRegionRectRef.current = null;
     }
 
-    if (searchBounds && !boundaryPolygon && !boundaryLoading) {
+    const canShowRectangle = searchRegionScale !== 'city' && searchRegionScale !== 'state';
+    if (searchBounds && !boundaryPolygon && !boundaryLoading && canShowRectangle) {
       searchRegionRectRef.current = new google.maps.Rectangle({
         bounds: {
           north: searchBounds.north,
@@ -161,7 +174,7 @@ function MapContent({ locations, userCoords, searchBounds, boundaryPolygon, boun
         searchRegionRectRef.current.setMap(null);
       }
     };
-  }, [searchBounds, boundaryPolygon, boundaryLoading, map]);
+  }, [searchBounds, boundaryPolygon, boundaryLoading, searchRegionScale, map]);
 
   // The real traced boundary, when the lookup found one. google.maps.Data
   // accepts GeoJSON natively and handles Polygon/MultiPolygon without

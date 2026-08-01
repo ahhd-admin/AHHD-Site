@@ -1,4 +1,4 @@
-import { Search, MapPin, Map, LayoutGrid, Crosshair } from 'lucide-react';
+import { Search, MapPin, Map, LayoutGrid, Crosshair, HelpCircle } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { APIProvider, useMapsLibrary } from '@vis.gl/react-google-maps';
 import MapSearch from './MapSearch';
@@ -7,10 +7,10 @@ import { supabase } from '../lib/supabase';
 import type { LocationWithDetails } from '../types/database';
 import { calculateDistance } from '../lib/geoUtils';
 import { ALL_SERVICES } from '../lib/serviceCategories';
-import { resolveStateCode } from '../lib/usStates';
+import { resolveStateCode, extractStateCode, stateNameFromCode, findUniqueStateMatch } from '../lib/usStates';
 import { HOME_SCROLL_STORAGE_KEY } from '../lib/scrollRestoration';
 import { saveSearchCache, loadSearchCache } from '../lib/searchResultsCache';
-import { fetchSearchBoundary, type BoundaryGeoJSON } from '../lib/boundaryLookup';
+import { fetchSearchBoundary, fetchStateBoundary, computeBoundsFromGeoJSON, type BoundaryGeoJSON } from '../lib/boundaryLookup';
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
 
@@ -18,6 +18,12 @@ const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
 // results, not be treated as a literal city/state/zip substring to match
 // against -- no real city, state abbreviation, or zip contains "usa".
 const BROAD_LOCATION_TERMS = new Set(['usa', 'us', 'u.s.', 'u.s.a.', 'united states', 'united states of america', 'america']);
+
+// Marks the synthetic "[State] (entire state)" autocomplete suggestion
+// (see the suggestions-fetch effect and handleSelectSuggestion) as
+// distinct from a real Google place_id, which is always a long opaque
+// string starting with "ChIJ" or similar -- never this literal prefix.
+const DIRECT_STATE_PLACE_ID_PREFIX = '__direct_state__';
 
 // Cap on rows fetched per search -- high enough to cover the full current
 // dataset (~7,200 MVP-scope locations) so "no filter" genuinely means "show
@@ -169,6 +175,22 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   // the Radius selector means "buffer around the whole region" (state)
   // vs. "distance from the searched point" (everything else).
   const [searchRegionScale, setSearchRegionScale] = useState<'state' | 'city' | 'zip' | 'address' | null>(null);
+  // The exact 2-letter code Google assigned the searched state (only ever
+  // set for scale === 'state') -- lets a state search filter by the real
+  // `state` column instead of just a lat/lng bounding box. Needed because
+  // a bounding box is a rectangle, not the state's real shape: searching
+  // Maine returned a few New Hampshire results sitting in the box's
+  // corner even with zero added Radius buffer, since NH pokes into that
+  // corner of Maine's own bounding rectangle.
+  const [searchStateCode, setSearchStateCode] = useState<string | null>(null);
+  // Whether a state search filters to exactly that state (the `state`
+  // column, exact) vs. the bounding-box + Radius-buffer behavior (which
+  // can include nearby out-of-state results, by design, for a visitor who
+  // specifically wants to see just-over-the-border options). Defaults to
+  // true: home care/hospice licensing and insurance reimbursement are
+  // typically state-bound, so an out-of-state result showing up
+  // unannounced is more likely to mislead than help.
+  const [confineToState, setConfineToState] = useState(true);
   const [gettingLocation, setGettingLocation] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [suggestions, setSuggestions] = useState<google.maps.places.AutocompletePrediction[]>([]);
@@ -179,6 +201,10 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   // submit time to decide whether a real boundary trace should even be
   // attempted (see shouldTraceBoundary below).
   const lastGeocodeScaleRef = useRef<'state' | 'city' | 'zip' | 'address' | undefined>(undefined);
+  // Shows/hides the licensing/insurance note next to "Confine to state
+  // only" -- a hover-or-tap popover (not a native title tooltip, which
+  // doesn't work on touch) explaining why crossing state lines matters.
+  const [showStateInsuranceInfo, setShowStateInsuranceInfo] = useState(false);
 
   // Restores a search coming in from the URL (e.g. hitting the browser
   // back button after clicking into a provider page). Checks the results
@@ -271,6 +297,8 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
     location,
     selectedServices,
     userCoords,
+    searchStateCode,
+    confineToState,
   });
   useEffect(() => {
     latestSearchStateRef.current = {
@@ -281,6 +309,8 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
       location,
       selectedServices,
       userCoords,
+      searchStateCode,
+      confineToState,
     };
   });
 
@@ -307,7 +337,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
         current.searchRegionScale === 'state' && current.searchBounds
           ? expandBoundsByMiles(current.searchBounds, current.distanceRadius)
           : current.searchBounds;
-      loadLocations(current.location, current.selectedServices, current.userCoords, queryBounds, current.searchRegionScale, current.distanceRadius);
+      loadLocations(current.location, current.selectedServices, current.userCoords, queryBounds, current.searchRegionScale, current.distanceRadius, current.searchStateCode, current.confineToState);
     }, 400);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -333,11 +363,42 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
         };
 
         autocompleteService.current.getPlacePredictions(request, (predictions, status) => {
-          if (status === google.maps.places.PlacesServiceStatus.OK && predictions) {
-            setSuggestions(predictions.slice(0, 5));
-          } else {
-            setSuggestions([]);
+          const realSuggestions =
+            status === google.maps.places.PlacesServiceStatus.OK && predictions ? predictions.slice(0, 5) : [];
+
+          // Surfaces "[State] (entire state)" as its own distinct, always-
+          // first option while typing a state's name -- Google's own
+          // Places Autocomplete tends to bury or omit the bare state in
+          // favor of cities that share part of its name (confirmed live:
+          // typing "New York" doesn't offer the state as a suggestion at
+          // all, only NYC and other New York-named places), which is
+          // exactly what made "how do I even search for the whole state"
+          // a real question. Only added for the CURRENT text (not stale
+          // once it's already picked), and only when the match is
+          // unambiguous (see findUniqueStateMatch).
+          const stateMatch = findUniqueStateMatch(location);
+          let suggestionsWithState = realSuggestions;
+          if (stateMatch) {
+            // Drops any real Google suggestion that's ALSO just this same
+            // state (e.g. Google occasionally offers "New York, USA"
+            // itself as one of its own predictions) so the state doesn't
+            // show up twice, once as the synthetic entry and once as
+            // Google's own -- the synthetic one is kept since it's the
+            // one guaranteed to resolve correctly (see
+            // resolveDirectStateMatch/handleSelectSuggestion).
+            const withoutDuplicateState = realSuggestions.filter(
+              (s) => resolveStateCode(s.description.split(',')[0].trim()) !== stateMatch.code
+            );
+            suggestionsWithState = [
+              {
+                place_id: `${DIRECT_STATE_PLACE_ID_PREFIX}${stateMatch.code}`,
+                description: `${stateMatch.name} (entire state)`,
+              } as google.maps.places.AutocompletePrediction,
+              ...withoutDuplicateState,
+            ];
           }
+
+          setSuggestions(suggestionsWithState.slice(0, 5));
         });
       } catch (error) {
         console.error('Error fetching suggestions:', error);
@@ -384,7 +445,9 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
     // scale/radius it just resolved, not whatever was left over from the
     // previous search.
     scale: 'state' | 'city' | 'zip' | 'address' | null = searchRegionScale,
-    radius: number = distanceRadius
+    radius: number = distanceRadius,
+    stateCode: string | null = searchStateCode,
+    confine: boolean = confineToState
   ) => {
     if (services.length === 0) {
       // No care type checked -- show nothing rather than dropping the
@@ -417,7 +480,18 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
         const isBroadTerm = trimmed !== '' && BROAD_LOCATION_TERMS.has(trimmed.toLowerCase());
 
         if (!isBroadTerm) {
-          if (queryBounds) {
+          if (scale === 'state' && confine && stateCode) {
+            // Filters to exactly this state via the `state` column itself
+            // rather than a lat/lng bounding box. A bounding box is a
+            // rectangle, not the state's real shape -- confirmed live that
+            // searching Maine included 3 New Hampshire results sitting in
+            // the box's corner (NH pokes into that corner of Maine's own
+            // bounding rectangle) even with zero added Radius buffer.
+            // Filtering the column directly is exact regardless of the
+            // state's shape, and sidesteps the antimeridian box-math below
+            // entirely for the default (confined) case.
+            query = query.eq('state', stateCode);
+          } else if (queryBounds) {
             // A real geographic region -- a state's actual extent, or a box
             // expanded around a geocoded city/zip/address, sized to that
             // search's own scale (see computeRegionBounds/CITY_RADIUS_
@@ -663,6 +737,33 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
     </div>
   );
 
+  // Shared by handleSearch's direct-state short-circuit and the synthetic
+  // "[State] (entire state)" suggestion below -- resolves a search string
+  // to a state's real bounds/center straight from the pre-fetched
+  // boundary bundle (see boundaryLookup.ts), with no geocoding call and no
+  // risk of Google's city/state ambiguity for the name (confirmed live:
+  // "New York, USA" geocodes to the city, not the state -- see the fuller
+  // explanation in handleSearch). Only the first comma-part is checked
+  // ("New York, USA" -> "New York"), so a real city/address search that
+  // happens to start differently never matches by accident. Returns null
+  // for anything that isn't a recognizable, bundled state name.
+  const resolveDirectStateMatch = async (
+    searchText: string
+  ): Promise<{
+    stateCode: string;
+    bounds: { south: number; west: number; north: number; east: number };
+    coords: { lat: number; lng: number };
+    boundary: BoundaryGeoJSON;
+  } | null> => {
+    const stateCode = resolveStateCode(searchText.split(',')[0].trim());
+    if (!stateCode) return null;
+    const boundary = await fetchStateBoundary(stateCode);
+    if (!boundary) return null;
+    const bounds = computeBoundsFromGeoJSON(boundary);
+    const coords = { lat: (bounds.south + bounds.north) / 2, lng: (bounds.west + bounds.east) / 2 };
+    return { stateCode, bounds, coords, boundary };
+  };
+
   const handleSelectSuggestion = async (placeId: string, description: string) => {
     // Fills the field and quietly geocodes/caches coordinates for later --
     // does NOT submit the search. Picking a suggestion used to jump
@@ -674,6 +775,22 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
     // it's just done ahead of time instead of at submit.
     setLocation(description);
     setShowSuggestions(false);
+
+    // The synthetic "[State] (entire state)" suggestion (see the
+    // suggestions list below) -- a real Google place_id never has this
+    // prefix, so this can't collide with an actual suggestion.
+    if (placeId.startsWith(DIRECT_STATE_PLACE_ID_PREFIX)) {
+      const match = await resolveDirectStateMatch(description);
+      if (match) {
+        setUserCoords(match.coords);
+        setSearchRegionScale('state');
+        setSearchStateCode(match.stateCode);
+        setSearchBounds(match.bounds);
+        setDistanceRadius(suggestDefaultRadius('state'));
+        lastGeocodeScaleRef.current = 'state';
+      }
+      return;
+    }
 
     if (placesLibrary) {
       const geocoder = new google.maps.Geocoder();
@@ -703,6 +820,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
           setSearchBounds(computeRegionBounds(coords, scale, rawBounds));
           setDistanceRadius(suggestDefaultRadius(scale));
           setSearchRegionScale(scale);
+          setSearchStateCode(scale === 'state' ? extractStateCode(results[0].address_components) : null);
           lastGeocodeScaleRef.current = scale;
         }
       });
@@ -826,8 +944,45 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
     // geocode just below otherwise.
     let effectiveScale = lastGeocodeScaleRef.current;
     let effectiveRadius = distanceRadius;
+    let effectiveStateCode = searchStateCode;
 
-    if (!userCoords) {
+    // Set true when the direct-state-name short-circuit just below already
+    // resolved the boundary polygon, so the separate boundary-trace block
+    // further down doesn't redundantly re-fetch the same thing.
+    let boundaryAlreadyResolved = false;
+
+    // A search that's exactly (or almost exactly) a US state's name --
+    // "New York, USA", "Illinois" -- resolves correctly against Google's
+    // geocoder only some of the time: confirmed live that "New York, USA"
+    // geocodes to New York City (types: ['locality'], no state-level
+    // result offered as an alternative), not the state, because the city
+    // is the more "prominent" result Google returns for that text.
+    // Checking known state names first (via resolveDirectStateMatch, using
+    // the boundary polygon already bundled for all 50 states -- see
+    // boundaryLookup.ts) sidesteps that ambiguity entirely for this common
+    // case -- no geocoding call needed, and no risk of landing on the
+    // wrong entity.
+    const directMatch = !userCoords ? await resolveDirectStateMatch(location) : null;
+
+    if (directMatch) {
+      setUserCoords(directMatch.coords);
+      effectiveCoords = directMatch.coords;
+      setSearchRegionScale('state');
+      effectiveScale = 'state';
+      setSearchStateCode(directMatch.stateCode);
+      effectiveStateCode = directMatch.stateCode;
+      setSearchBounds(directMatch.bounds);
+      effectiveDisplayBounds = directMatch.bounds;
+      const suggestedRadius = suggestDefaultRadius('state');
+      setDistanceRadius(suggestedRadius);
+      effectiveRadius = suggestedRadius;
+      lastGeocodeScaleRef.current = 'state';
+      setBoundaryPolygon(directMatch.boundary);
+      boundaryAlreadyResolved = true;
+      if (import.meta.env.DEV) {
+        console.log('[handleSearch] direct state match', { location, directMatch });
+      }
+    } else if (!userCoords) {
       try {
         const response = await fetch(
           `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(location)}&key=${GOOGLE_MAPS_API_KEY}`
@@ -846,6 +1001,10 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
           const scale = classifyRegionScale(result.types);
           effectiveScale = scale;
           setSearchRegionScale(scale);
+
+          const stateCode = scale === 'state' ? extractStateCode(result.address_components) : null;
+          effectiveStateCode = stateCode;
+          setSearchStateCode(stateCode);
 
           const box = result.geometry.bounds || result.geometry.viewport;
           const rawBounds = box
@@ -888,11 +1047,13 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
           // ILIKE-text-matching with a leftover scale from last time."
           console.error('Geocoding failed for search:', location, data.status, data.error_message);
           effectiveScale = undefined;
+          effectiveStateCode = null;
           lastGeocodeScaleRef.current = undefined;
         }
       } catch (error) {
         console.error('Geocoding error:', error);
         effectiveScale = undefined;
+        effectiveStateCode = null;
         lastGeocodeScaleRef.current = undefined;
       }
     }
@@ -911,7 +1072,28 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
     // searched, tracing the city while the map zoomed to the ZIP. Fired
     // without awaiting either way -- best-effort visual extra, never
     // something the actual search should wait on.
-    if (effectiveScale && shouldTraceBoundary(effectiveScale)) {
+    if (boundaryAlreadyResolved) {
+      // Already set by the direct-state-name short-circuit above.
+    } else if (effectiveScale === 'state' && effectiveStateCode) {
+      // All 50 states are pre-fetched and bundled statically (see
+      // boundaryLookup.ts) -- no live Nominatim round-trip, and no
+      // loading window for the fallback rectangle to (not) show during,
+      // for the one region type that's always one of a fixed, known set.
+      // Falls back to the live lookup on a bundle miss (e.g. DC, or a
+      // territory) rather than just giving up and showing nothing.
+      setBoundaryLoading(true);
+      fetchStateBoundary(effectiveStateCode).then((geo) => {
+        if (geo) {
+          setBoundaryPolygon(geo);
+          setBoundaryLoading(false);
+        } else {
+          fetchSearchBoundary(location).then((liveGeo) => {
+            setBoundaryPolygon(liveGeo);
+            setBoundaryLoading(false);
+          });
+        }
+      });
+    } else if (effectiveScale && shouldTraceBoundary(effectiveScale)) {
       setBoundaryLoading(true);
       fetchSearchBoundary(location).then((geo) => {
         setBoundaryPolygon(geo);
@@ -934,7 +1116,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
         ? expandBoundsByMiles(effectiveDisplayBounds, effectiveRadius)
         : effectiveDisplayBounds;
 
-    loadLocations(location, ensureServicesSelected(), effectiveCoords, queryBounds, effectiveScale ?? null, effectiveRadius);
+    loadLocations(location, ensureServicesSelected(), effectiveCoords, queryBounds, effectiveScale ?? null, effectiveRadius, effectiveStateCode, confineToState);
   };
 
   // For a city/zip/address search, changing the Radius is purely a
@@ -947,6 +1129,20 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
     setDistanceRadius(newRadius);
     if (hasSubmittedSearch && searchRegionScale === 'state' && searchBounds) {
       loadLocations(location, selectedServices, userCoords, expandBoundsByMiles(searchBounds, newRadius), 'state', newRadius);
+    }
+  };
+
+  // Toggling "Confine to just this state" needs a real re-query, not just
+  // a client-side filter -- switching from the exact `state` column match
+  // to the bounding-box+Radius query (or back) changes which rows the
+  // database query itself returns, not just which of an already-fetched
+  // set get shown.
+  const handleConfineToStateChange = (confine: boolean) => {
+    setConfineToState(confine);
+    if (hasSubmittedSearch && searchRegionScale === 'state') {
+      const queryBounds =
+        !confine && searchBounds ? expandBoundsByMiles(searchBounds, distanceRadius) : searchBounds;
+      loadLocations(location, selectedServices, userCoords, queryBounds, 'state', distanceRadius, searchStateCode, confine);
     }
   };
 
@@ -1170,7 +1366,46 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
         {renderCareTypeCheckboxes(true)}
       </fieldset>
 
-      {hasSubmittedSearch && (
+      {hasSubmittedSearch && searchRegionScale === 'state' && (
+        <div className="mt-3 animate-fade-in-up relative">
+          <label className="flex items-center gap-1.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={confineToState}
+              onChange={(e) => handleConfineToStateChange(e.target.checked)}
+              className="w-3.5 h-3.5 rounded border-neutral-300 text-primary-500 focus:ring-2 focus:ring-primary-200"
+            />
+            <span className="text-xs font-semibold text-navy-800">
+              Confine to {searchStateCode ? stateNameFromCode(searchStateCode) ?? 'this state' : 'this state'} only
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowStateInsuranceInfo((v) => !v)}
+              onMouseEnter={() => setShowStateInsuranceInfo(true)}
+              onMouseLeave={() => setShowStateInsuranceInfo(false)}
+              className="text-neutral-500 hover:text-navy-800 focus:outline-none focus:ring-2 focus:ring-primary-200 rounded-full"
+              aria-label="Why this matters"
+              aria-expanded={showStateInsuranceInfo}
+            >
+              <HelpCircle className="w-3.5 h-3.5" />
+            </button>
+          </label>
+          {showStateInsuranceInfo && (
+            // navy-800 on neutral-50 measures 12.4:1 (AAA).
+            <div
+              role="tooltip"
+              className="absolute z-20 mt-1.5 w-64 p-2.5 bg-neutral-50 border border-neutral-300 rounded-lg shadow-lg text-xs text-navy-800"
+            >
+              Home care, hospice, and similar licensing (including Medicare/
+              Medicaid coverage) is usually specific to one state. A nearby
+              out-of-state provider may not actually be able to serve you --
+              worth confirming directly before choosing one.
+            </div>
+          )}
+        </div>
+      )}
+
+      {hasSubmittedSearch && !(searchRegionScale === 'state' && confineToState) && (
         <div className="mt-3 animate-fade-in-up">
           <label htmlFor="radius-select" className="block text-xs font-semibold text-navy-800 mb-1">
             Radius <span className="font-normal text-neutral-600">(suggested -- change anytime)</span>
@@ -1303,6 +1538,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
                     searchBounds={hasSubmittedSearch ? searchBounds : null}
                     boundaryPolygon={hasSubmittedSearch ? boundaryPolygon : null}
                     boundaryLoading={hasSubmittedSearch ? boundaryLoading : false}
+                    searchRegionScale={hasSubmittedSearch ? searchRegionScale : null}
                     searchGeneration={searchGeneration}
                     // The Radius circle only draws for zip/address
                     // searches. For a city, a wide circle over the whole

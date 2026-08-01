@@ -44,3 +44,8 @@ geocode_monthly_budget.json
 
 # Test data
 data/
+# ...but not the app's own bundled static assets (pre-fetched state
+# boundary polygons, etc.) -- the "data/" pattern above was meant for a
+# scraper test-fixtures directory, not this.
+!public/data/
+!public/data/**
