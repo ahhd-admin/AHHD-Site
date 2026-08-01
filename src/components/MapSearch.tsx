@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
+import { BadgeCheck } from 'lucide-react';
 import { APIProvider, Map, AdvancedMarker, InfoWindow, useMap } from '@vis.gl/react-google-maps';
 import type { LocationWithDetails } from '../types/database';
 import { buildProviderSlug } from '../lib/slug';
 import { formatDistance } from '../lib/geoUtils';
 import { saveHomeScrollPosition } from '../lib/scrollRestoration';
+import { getVerifiedDate, formatVerifiedDate } from '../lib/formatVerifiedDate';
+import { saveMapView, takeSavedMapView } from '../lib/mapViewRestoration';
 import type { BoundaryGeoJSON } from '../lib/boundaryLookup';
 
 interface SearchBoundsLiteral {
@@ -18,6 +21,11 @@ interface MapSearchProps {
   userCoords?: { lat: number; lng: number } | null;
   searchBounds?: SearchBoundsLiteral | null;
   boundaryPolygon?: BoundaryGeoJSON | null;
+  // True while a city/state search's real boundary trace is still in
+  // flight -- see the matching comment in SearchHero.tsx. Withholds the
+  // fallback bounding-box rectangle during that window instead of drawing
+  // it immediately and replacing it moments later.
+  boundaryLoading?: boolean;
   radiusMiles?: number;
   hoveredLocationId?: string | null;
   // Bumped only when a search is actually (re-)submitted (Search/Enter,
@@ -43,10 +51,16 @@ const DEFAULT_ZOOM = 4.2;
 // for a real registered Map ID before production launch.
 const MAP_ID = 'DEMO_MAP_ID';
 
-function MapContent({ locations, userCoords, searchBounds, boundaryPolygon, radiusMiles, hoveredLocationId, searchGeneration }: MapSearchProps) {
+function MapContent({ locations, userCoords, searchBounds, boundaryPolygon, boundaryLoading, radiusMiles, hoveredLocationId, searchGeneration }: MapSearchProps) {
   const map = useMap();
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
 
+  // Keyed by location_id so the InfoWindow (see below) can anchor itself to
+  // the actual marker DOM element rather than a raw lat/lng -- letting
+  // Google compute the tail's pixel offset from the marker's real rendered
+  // size/anchor instead of guessing a fixed offset that would only be
+  // correct for one hover state.
+  const markerRefsMap = useRef<globalThis.Map<string, google.maps.marker.AdvancedMarkerElement>>(new globalThis.Map());
   const hasZoomedToUser = useRef<string>('');
   const radiusCircleRef = useRef<google.maps.Circle | null>(null);
   const searchRegionRectRef = useRef<google.maps.Rectangle | null>(null);
@@ -110,6 +124,13 @@ function MapContent({ locations, userCoords, searchBounds, boundaryPolygon, radi
   // that's merely been picked from the autocomplete dropdown but not
   // searched yet. Bold violet -- distinct from the red pins and the blue
   // Radius circle, and visible against a dense cluster of dots.
+  //
+  // Withheld entirely while boundaryLoading is true (a city/state trace is
+  // still in flight) -- drawing the rectangle immediately and then tearing
+  // it down the moment the real outline (or "no boundary found") arrives a
+  // few hundred ms later read as a big rectangle flashing over the map.
+  // zip/address searches never set boundaryLoading (they never attempt a
+  // trace), so their rectangle still appears immediately, unaffected.
   useEffect(() => {
     if (!map) return;
 
@@ -118,7 +139,7 @@ function MapContent({ locations, userCoords, searchBounds, boundaryPolygon, radi
       searchRegionRectRef.current = null;
     }
 
-    if (searchBounds && !boundaryPolygon) {
+    if (searchBounds && !boundaryPolygon && !boundaryLoading) {
       searchRegionRectRef.current = new google.maps.Rectangle({
         bounds: {
           north: searchBounds.north,
@@ -140,7 +161,7 @@ function MapContent({ locations, userCoords, searchBounds, boundaryPolygon, radi
         searchRegionRectRef.current.setMap(null);
       }
     };
-  }, [searchBounds, boundaryPolygon, map]);
+  }, [searchBounds, boundaryPolygon, boundaryLoading, map]);
 
   // The real traced boundary, when the lookup found one. google.maps.Data
   // accepts GeoJSON natively and handles Polygon/MultiPolygon without
@@ -306,6 +327,36 @@ function MapContent({ locations, userCoords, searchBounds, boundaryPolygon, radi
     }
   }, [searchBounds, userCoords, map, searchGeneration, locationsWithCoords]);
 
+  // Restores whichever pin's InfoWindow was open, and the exact camera
+  // position, from just before a click-through to a provider detail page
+  // -- see mapViewRestoration.ts for why this exists. Runs once real
+  // markers exist (so the "this pin still exists in the current result
+  // set" check below is meaningful) and, since it runs after the fitBounds
+  // effect above in the same commit, its camera move wins over that
+  // effect's own initial fit -- consuming the saved view immediately
+  // either way so it doesn't linger and reapply itself on some unrelated
+  // later render.
+  const hasRestoredViewRef = useRef(false);
+  useEffect(() => {
+    if (!map || hasRestoredViewRef.current || locationsWithCoords.length === 0) return;
+    hasRestoredViewRef.current = true;
+
+    const saved = takeSavedMapView();
+    if (!saved) return;
+
+    if (saved.center && saved.zoom !== null) {
+      map.moveCamera({ center: saved.center, zoom: saved.zoom });
+    }
+    if (saved.selectedLocationId && locationsWithCoords.some((l) => l.location_id === saved.selectedLocationId)) {
+      setSelectedLocationId(saved.selectedLocationId);
+    }
+    // Locks out the fitBounds effect above for this generation so it
+    // doesn't override the just-restored camera on a later render (e.g.
+    // once services/data finish settling).
+    lastFitGenerationRef.current = searchGeneration ?? 0;
+    hasFitWithMarkersRef.current = true;
+  }, [map, locationsWithCoords, searchGeneration]);
+
   const handlePinClick = (location: LocationWithDetails) => {
     setSelectedLocationId(location.location_id);
     if (location.latitude && location.longitude && map) {
@@ -329,6 +380,10 @@ function MapContent({ locations, userCoords, searchBounds, boundaryPolygon, radi
         return (
           <AdvancedMarker
             key={location.location_id}
+            ref={(marker) => {
+              if (marker) markerRefsMap.current.set(location.location_id, marker);
+              else markerRefsMap.current.delete(location.location_id);
+            }}
             position={{ lat: location.latitude!, lng: location.longitude! }}
             onClick={() => handlePinClick(location)}
             zIndex={isHovered ? 1 : 0}
@@ -369,17 +424,33 @@ function MapContent({ locations, userCoords, searchBounds, boundaryPolygon, radi
 
       {selectedLocationId && locationsWithCoords.find(l => l.location_id === selectedLocationId) && (() => {
         const location = locationsWithCoords.find(l => l.location_id === selectedLocationId)!;
+        const verifiedLabel = formatVerifiedDate(getVerifiedDate(location));
         return (
           <InfoWindow
-            position={{ lat: location.latitude!, lng: location.longitude! }}
+            // Anchored to the marker's own DOM element rather than a raw
+            // lat/lng -- Google then computes the tail's pixel offset from
+            // the marker's actual rendered anchor point (bottom-center of
+            // the pin circle) instead of opening at the exact coordinate,
+            // which previously put the tail overlapping the pin rather
+            // than pointing cleanly at its top. Falls back to position for
+            // the one render where a marker's ref hasn't attached yet.
+            anchor={markerRefsMap.current.get(location.location_id) ?? undefined}
+            position={
+              markerRefsMap.current.has(location.location_id)
+                ? undefined
+                : { lat: location.latitude!, lng: location.longitude! }
+            }
             onCloseClick={() => setSelectedLocationId(null)}
           >
-            <div className="p-2 min-w-[200px]">
-              <h3 className="font-semibold text-navy-800 mb-1">
+            {/* Condensed: address/city/state/zip collapsed onto one line,
+                distance and phone sharing a row instead of a paragraph
+                each -- shorter card, same information. */}
+            <div className="p-1.5 min-w-[190px] max-w-[240px]">
+              <h3 className="font-semibold text-navy-800 mb-1 text-sm leading-snug">
                 {location.organization?.organization_name}
               </h3>
               {location.service_types && location.service_types.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mb-2">
+                <div className="flex flex-wrap gap-1 mb-1.5">
                   {location.service_types.map((st) => (
                     // navy-800 on primary-100 measures 11.33:1 (AAA) --
                     // the previously-used primary-700/primary-100 pairing
@@ -387,33 +458,45 @@ function MapContent({ locations, userCoords, searchBounds, boundaryPolygon, radi
                     // even the AA floor for text this size.
                     <span
                       key={st.service_type_id}
-                      className="inline-block px-2 py-0.5 bg-primary-100 text-navy-800 rounded-full text-xs font-medium"
+                      className="inline-block px-1.5 py-0.5 bg-primary-100 text-navy-800 rounded-full text-[11px] font-medium leading-none"
                     >
                       {st.service_type_name}
                     </span>
                   ))}
                 </div>
               )}
-              <p className="text-sm text-neutral-600 mb-2">
-                {location.address_line_1}<br />
-                {location.city}, {location.state} {location.postal_code}
+              <p className="text-xs text-neutral-600 mb-1">
+                {location.address_line_1}, {location.city}, {location.state} {location.postal_code}
               </p>
-              {(location as any).distance && (
-                <p className="text-xs text-primary-600 font-medium mb-2">
-                  {formatDistance((location as any).distance)} away
+              {((location as any).distance || location.public_phone) && (
+                <p className="text-xs text-neutral-600 mb-1">
+                  {(location as any).distance && (
+                    <span className="text-primary-600 font-medium">
+                      {formatDistance((location as any).distance)} away
+                    </span>
+                  )}
+                  {(location as any).distance && location.public_phone && ' • '}
+                  {location.public_phone}
                 </p>
               )}
-              {location.public_phone && (
-                <p className="text-sm text-neutral-600 mb-2">
-                  {location.public_phone}
+              {verifiedLabel && (
+                <p className="flex items-center gap-1 text-[11px] font-medium text-success-700 mb-1.5">
+                  <BadgeCheck className="w-3 h-3 flex-shrink-0" />
+                  {verifiedLabel}
                 </p>
               )}
               <button
                 onClick={() => {
+                  const center = map?.getCenter();
+                  saveMapView({
+                    selectedLocationId: location.location_id,
+                    center: center ? { lat: center.lat(), lng: center.lng() } : null,
+                    zoom: map?.getZoom() ?? null,
+                  });
                   saveHomeScrollPosition();
                   window.location.href = `/provider/${buildProviderSlug(location.organization?.organization_name || location.location_name || '', location.achc_source_id)}`;
                 }}
-                className="mt-2 w-full text-center px-3 py-1.5 bg-primary-500 text-white rounded-md text-sm font-medium hover:bg-primary-600 transition-colors"
+                className="mt-1 w-full text-center px-3 py-1.5 bg-primary-500 text-white rounded-md text-sm font-medium hover:bg-primary-600 transition-colors"
               >
                 View Details
               </button>
@@ -422,6 +505,103 @@ function MapContent({ locations, userCoords, searchBounds, boundaryPolygon, radi
         );
       })()}
     </>
+  );
+}
+
+interface ResultsListProps {
+  locations: LocationWithDetails[];
+  hoveredLocationId: string | null;
+  setHoveredLocationId: (id: string | null) => void;
+}
+
+// A sibling of <Map>, not a child of it -- but still inside <APIProvider>,
+// which is what makes useMap() resolve here (the default map instance is
+// registered on APIProviderContext, reachable by any of its descendants,
+// not just descendants of the <Map> that created it). That access is what
+// lets a click on a list item capture the map's current camera before
+// navigating away, the same as a pin click's "View Details" button does.
+function ResultsList({ locations, hoveredLocationId, setHoveredLocationId }: ResultsListProps) {
+  const map = useMap();
+
+  if (locations.length === 0) return null;
+
+  return (
+    <div className="mt-4 bg-neutral-50 rounded-lg p-3 md:p-4 max-h-80 md:max-h-96 overflow-y-auto">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="font-semibold text-navy-800 text-sm md:text-base">
+          {locations.length} {locations.length === 1 ? 'Provider' : 'Providers'}
+        </h3>
+        <p className="text-xs text-neutral-500">Tap to view</p>
+      </div>
+      <div className="space-y-2">
+        {locations.map((location) => (
+          <button
+            key={location.location_id}
+            onMouseEnter={() => setHoveredLocationId(location.location_id)}
+            onMouseLeave={() => setHoveredLocationId(null)}
+            onClick={() => {
+              if (location.latitude && location.longitude) {
+                const center = map?.getCenter();
+                saveMapView({
+                  selectedLocationId: location.location_id,
+                  center: center ? { lat: center.lat(), lng: center.lng() } : null,
+                  zoom: map?.getZoom() ?? null,
+                });
+                saveHomeScrollPosition();
+                window.location.href = `/provider/${buildProviderSlug(location.organization?.organization_name || location.location_name || '', location.achc_source_id)}`;
+              }
+            }}
+            className={`w-full text-left p-2.5 md:p-3 bg-white rounded-lg border transition-all group active:scale-98 ${
+              hoveredLocationId === location.location_id
+                ? 'border-primary-400 shadow-md'
+                : 'border-neutral-200'
+            } hover:border-primary-400 hover:shadow-md active:border-primary-500`}
+          >
+            <div className="flex items-start gap-2 md:gap-3">
+              <div className="flex-1 min-w-0">
+                <h4 className="font-semibold truncate transition-colors text-sm md:text-base text-navy-800 group-hover:text-primary-600">
+                  {location.organization?.organization_name}
+                </h4>
+                {location.service_types && location.service_types.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {location.service_types.map((st) => (
+                      <span
+                        key={st.service_type_id}
+                        className="inline-block px-1.5 py-0.5 bg-primary-100 text-navy-800 rounded-full text-[11px] font-medium leading-none"
+                      >
+                        {st.service_type_name}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <p className="text-xs md:text-sm text-neutral-600 mt-1">
+                  {location.address_line_1}, {location.city}, {location.state}
+                </p>
+                {(location as any).distance && (
+                  <p className="text-xs text-primary-600 font-medium mt-1">
+                    {formatDistance((location as any).distance)} away
+                  </p>
+                )}
+                {location.public_phone && (
+                  <p className="text-xs text-neutral-500 mt-1">
+                    {location.public_phone}
+                  </p>
+                )}
+                {(() => {
+                  const verifiedLabel = formatVerifiedDate(getVerifiedDate(location));
+                  return verifiedLabel ? (
+                    <p className="flex items-center gap-1 text-[11px] font-medium text-success-700 mt-1">
+                      <BadgeCheck className="w-3 h-3 flex-shrink-0" />
+                      {verifiedLabel}
+                    </p>
+                  ) : null;
+                })()}
+              </div>
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -435,9 +615,13 @@ export default function MapSearch(props: MapSearchProps) {
   const [hoveredLocationId, setHoveredLocationId] = useState<string | null>(null);
 
   return (
-    <div className="relative">
-      <div className="h-[500px] md:h-[600px] w-full rounded-xl overflow-hidden touch-manipulation">
-        <APIProvider apiKey={GOOGLE_MAPS_API_KEY}>
+    // Wraps both the map and the results list below it (not just the map)
+    // so ResultsList can reach the map instance via useMap() -- see the
+    // comment on that component for why that requires being inside
+    // APIProvider, not just visually below the map.
+    <APIProvider apiKey={GOOGLE_MAPS_API_KEY}>
+      <div className="relative">
+        <div className="h-[500px] md:h-[600px] w-full rounded-xl overflow-hidden touch-manipulation">
           <Map
             defaultCenter={DEFAULT_CENTER}
             defaultZoom={DEFAULT_ZOOM}
@@ -461,60 +645,14 @@ export default function MapSearch(props: MapSearchProps) {
           >
             <MapContent {...props} hoveredLocationId={hoveredLocationId} />
           </Map>
-        </APIProvider>
-      </div>
-
-      {locationsWithCoords.length > 0 && (
-        <div className="mt-4 bg-neutral-50 rounded-lg p-3 md:p-4 max-h-80 md:max-h-96 overflow-y-auto">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-semibold text-navy-800 text-sm md:text-base">
-              {locationsWithCoords.length} {locationsWithCoords.length === 1 ? 'Provider' : 'Providers'}
-            </h3>
-            <p className="text-xs text-neutral-500">Tap to view</p>
-          </div>
-          <div className="space-y-2">
-            {locationsWithCoords.map((location) => (
-              <button
-                key={location.location_id}
-                onMouseEnter={() => setHoveredLocationId(location.location_id)}
-                onMouseLeave={() => setHoveredLocationId(null)}
-                onClick={() => {
-                  if (location.latitude && location.longitude) {
-                    saveHomeScrollPosition();
-                    window.location.href = `/provider/${buildProviderSlug(location.organization?.organization_name || location.location_name || '', location.achc_source_id)}`;
-                  }
-                }}
-                className={`w-full text-left p-2.5 md:p-3 bg-white rounded-lg border transition-all group active:scale-98 ${
-                  hoveredLocationId === location.location_id
-                    ? 'border-primary-400 shadow-md'
-                    : 'border-neutral-200'
-                } hover:border-primary-400 hover:shadow-md active:border-primary-500`}
-              >
-                <div className="flex items-start gap-2 md:gap-3">
-                  <div className="flex-1 min-w-0">
-                    <h4 className="font-semibold truncate transition-colors text-sm md:text-base text-navy-800 group-hover:text-primary-600">
-                      {location.organization?.organization_name}
-                    </h4>
-                    <p className="text-xs md:text-sm text-neutral-600">
-                      {location.address_line_1}, {location.city}, {location.state}
-                    </p>
-                    {(location as any).distance && (
-                      <p className="text-xs text-primary-600 font-medium mt-1">
-                        {formatDistance((location as any).distance)} away
-                      </p>
-                    )}
-                    {location.public_phone && (
-                      <p className="text-xs text-neutral-500 mt-1">
-                        {location.public_phone}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </button>
-            ))}
-          </div>
         </div>
-      )}
-    </div>
+
+        <ResultsList
+          locations={locationsWithCoords}
+          hoveredLocationId={hoveredLocationId}
+          setHoveredLocationId={setHoveredLocationId}
+        />
+      </div>
+    </APIProvider>
   );
 }

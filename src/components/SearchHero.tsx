@@ -152,6 +152,16 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   // doesn't cover -- most ZIP codes, or if the lookup fails for any
   // reason at all.
   const [boundaryPolygon, setBoundaryPolygon] = useState<BoundaryGeoJSON | null>(null);
+  // True for the brief window a city/state search's real boundary trace is
+  // in flight. MapSearch uses this to withhold the interim bounding-box
+  // rectangle for that window instead of drawing it immediately and then
+  // replacing it the moment the trace resolves -- previously read as a
+  // large rectangle flashing over the map before the real outline (or,
+  // often, nothing at all, since most traces resolve well under a second)
+  // took its place. Never set for zip/address searches, which never
+  // attempt a trace (see shouldTraceBoundary) and should keep showing
+  // their rectangle immediately, same as before.
+  const [boundaryLoading, setBoundaryLoading] = useState(false);
   // How specific the current search is -- drives whether the Radius
   // circle draws at all (only for zip/address; a wide circle over an
   // entire city/state just competes visually with its outline and adds
@@ -189,6 +199,14 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
       setLocations(cached.results);
       setUserCoords(cached.userCoords);
       setSearchBounds(cached.searchBounds);
+      // Also restore what a real submit would have set -- without these, a
+      // restored state search's searchRegionScale came back null, which
+      // broke the "Radius is a mile buffer around the state" behavior on
+      // the very next refinement (it silently fell back to treating Radius
+      // as a no-op instead).
+      setSearchRegionScale(cached.searchRegionScale);
+      setDistanceRadius(cached.distanceRadius);
+      lastGeocodeScaleRef.current = cached.searchRegionScale ?? undefined;
       return;
     }
 
@@ -232,6 +250,40 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
     }
   }, [hasSubmittedSearch, location, selectedServices, distanceRadius, viewMode]);
 
+  // Mirrors the latest render's values so the debounced effect below can
+  // read current data from inside its setTimeout callback instead of
+  // whatever its closure captured when the effect last ran. Needed because
+  // that effect deliberately only re-fires on selectedServices changing
+  // (see its own comment) -- on a URL-seeded initial load (a bookmark, or
+  // Back navigation from a provider page), hasSubmittedSearch is already
+  // true on the very first render, but userCoords/searchBounds are still
+  // their default null right up until the cache-hit effect's setters land
+  // a render later. Without this, the debounced effect's original closure
+  // (frozen at that first render) would still see the stale nulls 400ms
+  // later and silently overwrite the just-restored results with an empty,
+  // coords-less query -- confirmed via a live repro of the Back-navigation
+  // flow.
+  const latestSearchStateRef = useRef({
+    hasSubmittedSearch,
+    searchRegionScale,
+    searchBounds,
+    distanceRadius,
+    location,
+    selectedServices,
+    userCoords,
+  });
+  useEffect(() => {
+    latestSearchStateRef.current = {
+      hasSubmittedSearch,
+      searchRegionScale,
+      searchBounds,
+      distanceRadius,
+      location,
+      selectedServices,
+      userCoords,
+    };
+  });
+
   // Once a search has actually been submitted, refining Type of Care still
   // auto-refreshes live (debounced) without needing to hit Search again --
   // but nothing fetches before that first submit, and retyping the
@@ -246,18 +298,16 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   useEffect(() => {
     if (!hasSubmittedSearch) return;
     const timer = setTimeout(() => {
-      // Safe to read userCoords/searchBounds from state directly here
-      // (unlike handleSearch) -- this effect only ever fires on a later
-      // tick after any geocode from the original submit has already
-      // settled, not synchronously alongside setUserCoords/setSearchBounds.
+      const current = latestSearchStateRef.current;
+      if (!current.hasSubmittedSearch) return;
       // Re-expand for a state search -- see the matching comment in
       // handleSearch for why a state uses a mile buffer around its shape
       // instead of centroid-distance filtering.
       const queryBounds =
-        searchRegionScale === 'state' && searchBounds
-          ? expandBoundsByMiles(searchBounds, distanceRadius)
-          : searchBounds;
-      loadLocations(location, selectedServices, userCoords, queryBounds);
+        current.searchRegionScale === 'state' && current.searchBounds
+          ? expandBoundsByMiles(current.searchBounds, current.distanceRadius)
+          : current.searchBounds;
+      loadLocations(current.location, current.selectedServices, current.userCoords, queryBounds, current.searchRegionScale, current.distanceRadius);
     }, 400);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -325,7 +375,16 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
     // results for instant restore on back-navigation (see
     // saveSearchCache below).
     coords: { lat: number; lng: number } | null = null,
-    bounds: { south: number; west: number; north: number; east: number } | null = null
+    bounds: { south: number; west: number; north: number; east: number } | null = null,
+    // Same same-tick-staleness reasoning as coords/bounds above -- read as
+    // params (defaulting to current state for callers where that's already
+    // fresh enough, like the debounced refinement effect) rather than
+    // closing over searchRegionScale/distanceRadius directly, so a call
+    // from inside handleSearch's own geocode branch caches the region
+    // scale/radius it just resolved, not whatever was left over from the
+    // previous search.
+    scale: 'state' | 'city' | 'zip' | 'address' | null = searchRegionScale,
+    radius: number = distanceRadius
   ) => {
     if (services.length === 0) {
       // No care type checked -- show nothing rather than dropping the
@@ -371,9 +430,22 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             // their name -- instead of only the literal city-name match.
             query = query
               .gte('latitude', queryBounds.south)
-              .lte('latitude', queryBounds.north)
-              .gte('longitude', queryBounds.west)
-              .lte('longitude', queryBounds.east);
+              .lte('latitude', queryBounds.north);
+
+            // Alaska (and any other region whose real extent crosses the
+            // antimeridian) has a bounding box where west is a large
+            // POSITIVE longitude (~172, the Aleutians going the short way)
+            // and east is a large NEGATIVE one (~-130, the panhandle) --
+            // confirmed live geocoding "Alaska": southwest.lng=172.35,
+            // northeast.lng=-129.97. A plain gte(west).lte(east) then reads
+            // as "longitude >= 172 AND longitude <= -130", which no real
+            // longitude satisfies -- every Alaska search returned zero
+            // rows. When west > east, the box actually wraps around 180/
+            // -180, so a point is inside it if its longitude is on EITHER
+            // side (>= west OR <= east), not both.
+            query = queryBounds.west > queryBounds.east
+              ? query.or(`longitude.gte.${queryBounds.west},longitude.lte.${queryBounds.east}`)
+              : query.gte('longitude', queryBounds.west).lte('longitude', queryBounds.east);
           } else if (coords) {
             // A point with no defined region (GPS "My Location", or a
             // geocode result with no bounds at all) -- the city-scale box,
@@ -487,6 +559,13 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
       // becomes the new Radius selector value, so the UI honestly
       // reflects what's actually being shown rather than a silent
       // widening.
+      // Tracks whichever box actually produced results -- bounds itself
+      // stays the original (tight) box the caller passed in, so caching
+      // against that instead of usedBounds would save a box known to
+      // return zero results, defeating the point of caching for an instant
+      // restore.
+      let usedBounds = bounds;
+      let usedRadius = radius;
       if (mapped.length === 0 && coords && bounds) {
         for (const step of RADIUS_EXPANSION_STEPS) {
           const wider = expandBoundsByMiles(bounds, step);
@@ -496,6 +575,8 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
           }
           if (retryResults.length > 0) {
             mapped = retryResults;
+            usedBounds = wider;
+            usedRadius = step;
             setDistanceRadius(step);
             break;
           }
@@ -503,7 +584,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
       }
 
       setLocations(mapped);
-      saveSearchCache(searchText, services, mapped, coords, bounds);
+      saveSearchCache(searchText, services, mapped, coords, usedBounds, scale, usedRadius);
     } catch (error) {
       // Previously left `locations` at whatever it already held (stale
       // results from a prior search, or the initial empty array) with no
@@ -678,8 +759,18 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   // useful until manually touched. For a state, this is the mile buffer
   // added around the state's own shape (see expandBoundsByMiles), not a
   // centroid-distance radius.
+  //
+  // State defaults to 999999 ("Any distance", which for state scale means
+  // no added buffer at all -- see expandBoundsByMiles -- i.e. exactly the
+  // state's own boundary) rather than a mile buffer past the state line.
+  // Home care/hospice licensing and insurance reimbursement are typically
+  // state-bound, so an out-of-state provider a few miles past the border
+  // may not actually be able to serve a visitor even though it looks
+  // nearby on the map -- defaulting to the state itself avoids surfacing
+  // those by default. Still just a suggestion: a visitor who specifically
+  // wants to see just-over-the-border options can widen it manually.
   const suggestDefaultRadius = (scale: 'state' | 'city' | 'zip' | 'address'): number => {
-    if (scale === 'state') return 50;
+    if (scale === 'state') return 999999;
     if (scale === 'zip' || scale === 'address') return 5;
     return 25; // city
   };
@@ -700,6 +791,22 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
     if (!location.trim()) return;
     setHasSubmittedSearch(true);
     setSearchGeneration((n) => n + 1);
+
+    // Cleared immediately, not left showing until the new results land.
+    // Two reasons: visually, the previous search's pins stayed on screen
+    // (reading as "did my new search even register?") for however long the
+    // geocode+query took; more importantly, MapSearch's fitBounds effect
+    // treats "there are markers" as "the current search's markers are
+    // ready to fit to" -- with the old markers still present the instant
+    // searchGeneration/searchBounds change, it would fit to (and then lock
+    // onto, for this generation) the PREVIOUS search's pins before the new
+    // ones ever arrived, which is why the camera sometimes never
+    // re-zoomed to the new search at all. This intentionally does NOT
+    // apply to a same-search refinement (Type of Care, Radius) -- those
+    // still keep prior results visible during their refetch (see
+    // loadLocations's callers below, none of which clear locations first).
+    setLocations([]);
+    setLoading(true);
 
     // Cleared immediately (not just left to be overwritten once the fetch
     // below resolves) so a stale outline from the previous search doesn't
@@ -805,7 +912,13 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
     // without awaiting either way -- best-effort visual extra, never
     // something the actual search should wait on.
     if (effectiveScale && shouldTraceBoundary(effectiveScale)) {
-      fetchSearchBoundary(location).then(setBoundaryPolygon);
+      setBoundaryLoading(true);
+      fetchSearchBoundary(location).then((geo) => {
+        setBoundaryPolygon(geo);
+        setBoundaryLoading(false);
+      });
+    } else {
+      setBoundaryLoading(false);
     }
 
     // A state search's query bounds get expanded by the current Radius
@@ -821,7 +934,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
         ? expandBoundsByMiles(effectiveDisplayBounds, effectiveRadius)
         : effectiveDisplayBounds;
 
-    loadLocations(location, ensureServicesSelected(), effectiveCoords, queryBounds);
+    loadLocations(location, ensureServicesSelected(), effectiveCoords, queryBounds, effectiveScale ?? null, effectiveRadius);
   };
 
   // For a city/zip/address search, changing the Radius is purely a
@@ -833,7 +946,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   const handleRadiusChange = (newRadius: number) => {
     setDistanceRadius(newRadius);
     if (hasSubmittedSearch && searchRegionScale === 'state' && searchBounds) {
-      loadLocations(location, selectedServices, userCoords, expandBoundsByMiles(searchBounds, newRadius));
+      loadLocations(location, selectedServices, userCoords, expandBoundsByMiles(searchBounds, newRadius), 'state', newRadius);
     }
   };
 
@@ -861,6 +974,12 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
         setSearchRegionScale('address');
         setHasSubmittedSearch(true);
         setSearchGeneration((n) => n + 1);
+        // Same reasoning as handleSearch -- a genuinely new search (this is
+        // one) shouldn't leave a previous search's markers up to be
+        // mistakenly fit-and-locked-onto before this one's own results
+        // arrive.
+        setLocations([]);
+        setLoading(true);
 
         try {
           const response = await fetch(
@@ -879,7 +998,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             // read `location` from this closure, so it would search with
             // the previous (likely empty) text. Using the just-resolved
             // address directly instead.
-            loadLocations(cityResult.formatted_address, ensureServicesSelected(), coords, null);
+            loadLocations(cityResult.formatted_address, ensureServicesSelected(), coords, null, 'address', distanceRadius);
           }
         } catch (error) {
           console.error('Reverse geocoding error:', error);
@@ -1183,6 +1302,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
                     userCoords={hasSubmittedSearch ? userCoords : null}
                     searchBounds={hasSubmittedSearch ? searchBounds : null}
                     boundaryPolygon={hasSubmittedSearch ? boundaryPolygon : null}
+                    boundaryLoading={hasSubmittedSearch ? boundaryLoading : false}
                     searchGeneration={searchGeneration}
                     // The Radius circle only draws for zip/address
                     // searches. For a city, a wide circle over the whole

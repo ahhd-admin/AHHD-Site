@@ -13,7 +13,10 @@ const fakeMap = {
   panTo: vi.fn(),
   setZoom: vi.fn(),
   getCenter: vi.fn(),
+  getZoom: vi.fn(),
   getBounds: vi.fn(),
+  moveCamera: vi.fn(),
+  fitBounds: vi.fn(),
 };
 
 vi.mock('@vis.gl/react-google-maps', () => ({

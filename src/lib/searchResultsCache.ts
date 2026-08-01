@@ -19,11 +19,20 @@ interface CachedSearchBounds {
   east: number;
 }
 
+type RegionScale = 'state' | 'city' | 'zip' | 'address' | null;
+
 interface CachedSearchEntry {
   key: string;
   results: LocationWithDetails[];
   userCoords: { lat: number; lng: number } | null;
   searchBounds: CachedSearchBounds | null;
+  // Added alongside searchBounds/userCoords -- without these, a restored
+  // search was missing what handleSearch would normally have set, which
+  // broke a state search's Radius-buffer math on the very next refinement
+  // (searchRegionScale came back null, so a cached Alaska/Maine/etc.
+  // restore silently stopped treating "Radius" as a state buffer at all).
+  searchRegionScale: RegionScale;
+  distanceRadius: number;
   savedAt: number;
 }
 
@@ -36,7 +45,9 @@ export function saveSearchCache(
   services: string[],
   results: LocationWithDetails[],
   userCoords: { lat: number; lng: number } | null,
-  searchBounds: CachedSearchBounds | null
+  searchBounds: CachedSearchBounds | null,
+  searchRegionScale: RegionScale,
+  distanceRadius: number
 ) {
   try {
     const entry: CachedSearchEntry = {
@@ -44,6 +55,8 @@ export function saveSearchCache(
       results,
       userCoords,
       searchBounds,
+      searchRegionScale,
+      distanceRadius,
       savedAt: Date.now(),
     };
     sessionStorage.setItem(CACHE_KEY, JSON.stringify(entry));
@@ -56,14 +69,29 @@ export function saveSearchCache(
 export function loadSearchCache(
   location: string,
   services: string[]
-): { results: LocationWithDetails[]; userCoords: { lat: number; lng: number } | null; searchBounds: CachedSearchBounds | null } | null {
+): {
+  results: LocationWithDetails[];
+  userCoords: { lat: number; lng: number } | null;
+  searchBounds: CachedSearchBounds | null;
+  searchRegionScale: RegionScale;
+  distanceRadius: number;
+} | null {
   try {
     const raw = sessionStorage.getItem(CACHE_KEY);
     if (!raw) return null;
     const entry: CachedSearchEntry = JSON.parse(raw);
     if (entry.key !== buildKey(location, services)) return null;
     if (Date.now() - entry.savedAt > MAX_AGE_MS) return null;
-    return { results: entry.results, userCoords: entry.userCoords, searchBounds: entry.searchBounds };
+    return {
+      results: entry.results,
+      userCoords: entry.userCoords,
+      searchBounds: entry.searchBounds,
+      // Both fall back to sensible defaults for an entry saved by an
+      // older version of this cache format (before these fields existed)
+      // still sitting in sessionStorage.
+      searchRegionScale: entry.searchRegionScale ?? null,
+      distanceRadius: entry.distanceRadius ?? 999999,
+    };
   } catch {
     return null;
   }

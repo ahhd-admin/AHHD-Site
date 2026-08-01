@@ -1,8 +1,9 @@
-import { MapPin, Phone, Globe, Shield, CheckCircle, Award, Star } from 'lucide-react';
+import { MapPin, Phone, Globe, Shield, Award, Star, BadgeCheck } from 'lucide-react';
 import type { LocationWithDetails } from '../types/database';
 import { formatDistance } from '../lib/geoUtils';
 import { buildProviderSlug } from '../lib/slug';
 import { saveHomeScrollPosition } from '../lib/scrollRestoration';
+import { getVerifiedDate, formatVerifiedDate } from '../lib/formatVerifiedDate';
 
 interface ProviderCardProps {
   location: LocationWithDetails & { distance?: number | null };
@@ -15,8 +16,8 @@ export default function ProviderCard({ location, distance }: ProviderCardProps) 
     (record) => record.accreditation_status === 'active' && record.is_current_record
   ) || [];
 
-  const serviceNames = location.service_types?.map((st) => st.service_type_name).join(', ') || 'Care Services';
   const isEnhanced = location.listing_settings?.is_featured || false;
+  const verifiedLabel = formatVerifiedDate(getVerifiedDate(location));
 
   // location_name is currently populated as a straight copy of the
   // organization name for essentially every record (real DBA/"doing
@@ -64,11 +65,34 @@ export default function ProviderCard({ location, distance }: ProviderCardProps) 
           )}
         </div>
 
-        <div className="space-y-1.5 mb-2.5 flex-1">
-          <div className="flex items-start gap-1.5 text-neutral-700">
-            <CheckCircle className="w-4 h-4 text-primary-600 flex-shrink-0 mt-0.5" />
-            <span className="text-sm font-medium">{serviceNames}</span>
+        {verifiedLabel && (
+          // success-700 on white measures 5.48:1 (clears AA) -- a quiet but
+          // legible trust signal, not shouting as loud as the Accredited
+          // badge but still readable at a glance rather than buried in the
+          // detail page only.
+          <div className="flex items-center gap-1 mb-2.5 text-success-700">
+            <BadgeCheck className="w-3.5 h-3.5 flex-shrink-0" />
+            <span className="text-xs font-medium">{verifiedLabel}</span>
           </div>
+        )}
+
+        <div className="space-y-1.5 mb-2.5 flex-1">
+          {location.service_types && location.service_types.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {location.service_types.map((st) => (
+                // Same pairing as the map pin's InfoWindow tags (navy-800 on
+                // primary-100 measures 11.33:1, AAA) -- one consistent tag
+                // style for "what care this location offers" everywhere it
+                // shows up.
+                <span
+                  key={st.service_type_id}
+                  className="inline-block px-2 py-0.5 bg-primary-100 text-navy-800 rounded-full text-xs font-medium"
+                >
+                  {st.service_type_name}
+                </span>
+              ))}
+            </div>
+          )}
 
           <div className="flex items-start gap-1.5 text-neutral-700">
             <MapPin className="w-4 h-4 text-neutral-500 flex-shrink-0 mt-0.5" />
