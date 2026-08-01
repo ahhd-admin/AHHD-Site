@@ -27,13 +27,12 @@ interface SearchHeroProps {
 
 function SearchHeroContent({ onSearch }: SearchHeroProps) {
   const [location, setLocation] = useState('');
-  // Defaults to every MVP-scope service rather than none, so the initial
-  // view (and any search with no service checkboxes touched) is naturally
-  // scoped to real, current data -- there's also older, unrelated data in
-  // the same table (different service categories, months out of date) that
-  // happens to share the same published/publicly-displayable flags; an
-  // empty filter would show that too.
-  const [selectedServices, setSelectedServices] = useState<string[]>(Object.keys(ALL_SERVICES));
+  // Starts with nothing checked -- picking at least one Type of Care is a
+  // deliberate part of the search now (see loadLocations: zero services
+  // selected shows nothing rather than silently searching every service,
+  // which also avoids surfacing older, out-of-scope data in the same
+  // table that happens to share the same publish flags).
+  const [selectedServices, setSelectedServices] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<'map' | 'list'>('map');
   const [locations, setLocations] = useState<LocationWithDetails[]>([]);
   const [loading, setLoading] = useState(false);
