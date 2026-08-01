@@ -5,6 +5,7 @@ import Footer from '../components/Footer';
 import { supabase } from '../lib/supabase';
 import type { LocationWithDetails } from '../types/database';
 import { parseAchcSourceIdFromSlug } from '../lib/slug';
+import { getVerifiedDate, formatVerifiedDate } from '../lib/formatVerifiedDate';
 
 interface ProviderDetailPageProps {
   locationId?: string;
@@ -238,11 +239,19 @@ export default function ProviderDetailPage({ locationId }: ProviderDetailPagePro
                             <p className="font-semibold text-navy-800 text-lg">
                               {accreditation.accrediting_body}
                             </p>
-                            {accreditation.accreditation_scope && (
-                              <p className="text-sm text-neutral-600 mt-1">
-                                {accreditation.accreditation_scope}
-                              </p>
-                            )}
+                            {/* Every accreditation_scope value currently in the DB is the
+                                literal string "National raw ACHC pull; no state selected" --
+                                an internal ingestion note, not real scope content, that was
+                                rendering verbatim on every provider page right under the
+                                credential meant to build trust. Filtered out by pattern
+                                (not just hidden entirely) so real scope text starts showing
+                                automatically once the scraper populates it. */}
+                            {accreditation.accreditation_scope &&
+                              !/raw ACHC pull/i.test(accreditation.accreditation_scope) && (
+                                <p className="text-sm text-neutral-600 mt-1">
+                                  {accreditation.accreditation_scope}
+                                </p>
+                              )}
                           </div>
                           <span className="badge-success">
                             {accreditation.accreditation_status}
@@ -445,10 +454,18 @@ export default function ProviderDetailPage({ locationId }: ProviderDetailPagePro
                   )}
                 </div>
 
-                {location.last_verified_at && (
+                {/* Was reading last_verified_at directly, which is only ever
+                    set once at import and goes stale -- confirmed live the
+                    same listing showed "Last verified: yesterday" on its
+                    search-results card (which already used this shared
+                    helper) but a date months old here, contradicting
+                    itself between the two screens. Now sourced the same
+                    way everywhere: source_last_seen_at (the nightly
+                    scraper's actual last-confirmed-at-source run) first. */}
+                {formatVerifiedDate(getVerifiedDate(location)) && (
                   <div className="mt-6 pt-6 border-t border-neutral-200">
                     <p className="text-sm text-neutral-600">
-                      Last verified: {new Date(location.last_verified_at).toLocaleDateString()}
+                      {formatVerifiedDate(getVerifiedDate(location))}
                     </p>
                   </div>
                 )}
@@ -488,9 +505,28 @@ export default function ProviderDetailPage({ locationId }: ProviderDetailPagePro
           </div>
 
           <div className="mt-12 text-center">
-            <a href="/find-care" className="btn-outline">
+            {/* Was a plain <a href="/find-care"> -- a real page load to a
+                bare URL with no query string, discarding whatever search
+                (location, filters, radius, view) got the visitor here in
+                the first place. Confirmed live: the browser's own Back
+                button already restores everything correctly (search state
+                round-trips through the URL query string), so this now
+                just does the same thing instead of a fixed, param-less
+                destination. Falls back to /find-care directly if there's
+                nothing in history to go back to (e.g. a shared/bookmarked
+                link straight to this page). */}
+            <button
+              onClick={() => {
+                if (window.history.length > 1) {
+                  window.history.back();
+                } else {
+                  window.location.href = '/find-care';
+                }
+              }}
+              className="btn-outline"
+            >
               ← Back to Search Results
-            </a>
+            </button>
           </div>
         </div>
       </main>

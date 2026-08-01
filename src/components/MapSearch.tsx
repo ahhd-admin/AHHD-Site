@@ -378,11 +378,29 @@ function MapContent({ locations, userCoords, searchBounds, boundaryPolygon, boun
       // animation's speed directly -- that's internal to the renderer. The
       // two real levers are how large a zoom jump is requested (fewer new
       // tile levels to fetch/render reads as snappier) and network/tile
-      // load time, which isn't controllable client-side. Pulled the target
-      // back from 14 to 13 -- still close enough to read the immediate
-      // area, but one fewer tile level to load on every click, especially
-      // noticeable jumping from the unsearched nationwide default view.
-      map.moveCamera({ center: newCenter, zoom: 13 });
+      // load time, which isn't controllable client-side.
+      //
+      // Confirmed via a Playwright video/screenshot-burst capture (still
+      // reported as "the map blows up/zooms in weird" after the earlier
+      // tap-highlight fix -- a genuinely different bug from that one) that
+      // jumping straight to a fixed zoom=13 from a wide result-set fit
+      // (e.g. a whole-metro view around zoom 9-10 after a city search)
+      // shows a clearly visible blown-up, pixelated tile for about one
+      // frame: Google's renderer shows an upscaled version of the
+      // already-loaded low-zoom tile while the real zoom=13 tiles are
+      // still being fetched, before snapping to the sharp result a beat
+      // later. The fix isn't fetch speed (not controllable client-side);
+      // it's requesting a smaller jump. A +4 cap still landed on the same
+      // zoom=13 as before in the common case (fitBounds typically settles
+      // around zoom 9-10, and 9+4/10+4 both round up to 13 anyway) and
+      // produced an identical blur in testing -- +2 was the smallest cap
+      // that visibly cleared the artifact while still zooming in
+      // meaningfully. Clicking again from the new (now closer) position
+      // closes the rest of the way with another small, clean jump instead
+      // of one big jarring one.
+      const currentZoom = map.getZoom() ?? 4;
+      const targetZoom = Math.min(13, currentZoom + 2);
+      map.moveCamera({ center: newCenter, zoom: targetZoom });
     }
   };
 

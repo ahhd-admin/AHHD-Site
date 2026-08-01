@@ -1421,7 +1421,14 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             </span>
             <button
               type="button"
-              onClick={() => setShowStateInsuranceInfo((v) => !v)}
+              // Was toggling on click -- since hover already opens it, a
+              // natural hover-then-click motion immediately closed the
+              // tooltip right as someone tried to read it (confirmed live).
+              // Click now always opens (never closes) it instead; mouse
+              // leaving is still what closes it, and click is what makes
+              // it reachable at all on touch devices where hover never
+              // fires.
+              onClick={() => setShowStateInsuranceInfo(true)}
               onMouseEnter={() => setShowStateInsuranceInfo(true)}
               onMouseLeave={() => setShowStateInsuranceInfo(false)}
               className="text-neutral-500 hover:text-navy-800 focus:outline-none focus:ring-2 focus:ring-primary-200 rounded-full"
