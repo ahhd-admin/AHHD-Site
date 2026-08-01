@@ -115,4 +115,29 @@
       font-size: 16px !important;
     }
   }
+
+  /* A brief entrance for content that newly appears once a search is
+     submitted (the results header, radius control) -- there's no layout
+     transition to animate anymore (search panel and map/grid are always
+     side by side), but a plain instant pop-in still reads as abrupt. */
+  @keyframes fade-in-up {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-fade-in-up {
+    animation: fade-in-up 0.3s ease-out;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .animate-fade-in-up {
+      animation: none;
+    }
+  }
 }

@@ -679,7 +679,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
       </fieldset>
 
       {hasSubmittedSearch && (
-        <div className="mt-3">
+        <div className="mt-3 animate-fade-in-up">
           <label htmlFor="radius-select" className="block text-xs font-semibold text-navy-800 mb-1">
             Radius
           </label>
@@ -730,7 +730,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
           <div className="flex-1 min-w-0">
             <div className="rounded-2xl overflow-hidden shadow-md border border-neutral-200 bg-white">
               {hasSubmittedSearch && !loading && (
-                <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-neutral-200 bg-neutral-50">
+                <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-neutral-200 bg-neutral-50 animate-fade-in-up">
                   <p className="text-sm text-neutral-600">
                     {filteredLocations.length} accredited {filteredLocations.length === 1 ? 'provider' : 'providers'}
                     {location && ` near ${location}`}
@@ -771,18 +771,25 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
                   <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-primary-200 border-t-primary-600"></div>
                 </div>
               ) : viewMode === 'list' && hasSubmittedSearch ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 min-h-[500px] bg-neutral-50">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 min-h-[500px] bg-neutral-50 animate-fade-in-up">
                   {filteredLocations.map((loc) => (
                     <ProviderCard key={loc.location_id} location={loc} />
                   ))}
                 </div>
               ) : (
-                <MapSearch
-                  locations={filteredLocations}
-                  userCoords={userCoords}
-                  searchBounds={searchBounds}
-                  radiusMiles={distanceRadius}
-                />
+                // The animation class goes on this wrapper, not inside
+                // MapSearch itself -- it's a paint-only transform/opacity
+                // (doesn't affect layout), so it's safe to animate around
+                // the Google Map without risking a mid-animation layout
+                // measurement glitch in the Maps API.
+                <div className={hasSubmittedSearch ? 'animate-fade-in-up' : ''}>
+                  <MapSearch
+                    locations={filteredLocations}
+                    userCoords={userCoords}
+                    searchBounds={searchBounds}
+                    radiusMiles={distanceRadius}
+                  />
+                </div>
               )}
             </div>
 
