@@ -471,17 +471,17 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             <div className="absolute inset-0 bg-white/60" aria-hidden="true" />
           )}
 
-          {/* A fixed-size floating card while typing (not full-width --
-              stays a set, centered card so it reads as a compact prompt
-              rather than a form spanning the whole map), which then moves
-              to a full-width bar pinned at the top once a search is
-              submitted -- both the position AND the width change together
-              on that one transition. */}
+          {/* A fixed-size floating card, both before and after search --
+              only the position changes (centered -> anchored to the upper
+              left). Was previously a full-width bar across the top after
+              search, which covered the map's native fullscreen control
+              (Google places it top-right by default); staying a corner
+              card leaves that clear. */}
           <div
-            className={`absolute z-20 transition-all duration-300 ${
+            className={`absolute z-20 transition-all duration-300 w-[calc(100%-1.5rem)] max-w-4xl ${
               hasSubmittedSearch
-                ? 'top-3 inset-x-3'
-                : 'top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[calc(100%-2rem)] max-w-md'
+                ? 'top-3 left-3'
+                : 'top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2'
             }`}
           >
             <div className="bg-white rounded-xl shadow-2xl border border-neutral-200 p-3 sm:p-4">
