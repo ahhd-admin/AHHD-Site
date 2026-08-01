@@ -221,19 +221,24 @@ export default function MapSearch(props: MapSearchProps) {
             fullscreenControl={true}
             streetViewControl={false}
             zoomControl={true}
-            // Wide enough to include Alaska and Hawaii (both have real
-            // providers in the data) in addition to the contiguous states --
-            // the old bounds (24.5-49.5N, -125 to -66) were continental-US
-            // only and actively blocked panning to either. The default
-            // view still opens centered on the contiguous states (see
-            // DEFAULT_CENTER/DEFAULT_ZOOM below); this only affects how far
-            // someone can pan/zoom to reach AK/HI when they need to.
+            // Latitude stays US-focused (a bit below Hawaii's southern tip
+            // to a bit above Alaska's northern tip); longitude is left
+            // essentially open. It has to be -- Google's official state
+            // bounds for both AK and HI extend well past a "just the
+            // visible land" box: Alaska's includes the Aleutian chain,
+            // which stretches almost to the antimeridian, and Hawaii's
+            // includes the uninhabited Northwestern Hawaiian Islands out
+            // past -178. A narrower west limit (this used to be -170)
+            // clips fitBounds's target box, and Google silently recenters
+            // the camera to whatever fits inside the restriction instead
+            // of erroring -- which is what made Alaska look off-center and
+            // Hawaii fail to show at all.
             restriction={{
               latLngBounds: {
-                north: 72,
-                south: 18,
-                west: -170.0,
-                east: -66.0
+                north: 75,
+                south: 15,
+                west: -180,
+                east: 180
               },
               strictBounds: false
             }}
