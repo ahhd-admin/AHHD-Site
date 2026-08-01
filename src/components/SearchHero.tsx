@@ -490,14 +490,14 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   // Shared between the map-overlay layout and the grid layout below --
   // defined once so the two don't drift out of sync with each other.
   const searchCard = (
-    <div className="bg-white rounded-xl shadow-2xl border border-neutral-200 p-3 sm:p-4">
+    <div className="bg-white rounded-xl shadow-2xl border border-neutral-200 p-3">
       {!hasSubmittedSearch && (
-        <div className="text-center mb-3">
-          <div className="inline-flex items-center justify-center w-12 h-12 bg-primary-100 rounded-2xl mb-2">
-            <MapPin className="w-6 h-6 text-navy-800" />
+        <div className="text-center mb-2">
+          <div className="inline-flex items-center justify-center w-9 h-9 bg-primary-100 rounded-xl mb-1.5">
+            <MapPin className="w-5 h-5 text-navy-800" />
           </div>
-          <p className="font-semibold text-navy-800">Where are you looking for care?</p>
-          <p className="text-sm text-neutral-600 mt-0.5">Enter a state, address, or ZIP code</p>
+          <p className="font-semibold text-navy-800 text-sm">Where are you looking for care?</p>
+          <p className="text-xs text-neutral-600 mt-0.5">Enter a state, address, or ZIP code</p>
         </div>
       )}
 
@@ -696,20 +696,16 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
               <div className="absolute inset-0 bg-white/60" aria-hidden="true" />
             )}
 
-            {/* A fixed-size floating card in both states, but not the SAME
-                size -- max-w-2xl reads right anchored in the corner
-                (surrounded by map/pin context), but the same width felt
-                oversized as a big empty box centered on a dimmed map, so
-                the centered pre-search state stays narrower (max-w-md).
-                Was previously a full-width bar across the top after
-                search, which covered the map's native fullscreen control
-                (Google places it top-right by default); staying a corner
-                card leaves that clear. */}
+            {/* Same width (max-w-2xl) in both states now -- narrower felt
+                cramped in the centered pre-search view. Only the position
+                changes: centered before a search, pinned to the upper
+                left after (avoids the map's native fullscreen control,
+                which Google places top-right by default). */}
             <div
-              className={`absolute z-20 transition-all duration-300 ${
+              className={`absolute z-20 w-[calc(100%-1.5rem)] max-w-2xl transition-all duration-300 ${
                 hasSubmittedSearch
-                  ? 'top-3 left-3 w-[calc(100%-1.5rem)] max-w-2xl'
-                  : 'top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[calc(100%-2rem)] max-w-md'
+                  ? 'top-3 left-3'
+                  : 'top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2'
               }`}
             >
               {searchCard}
