@@ -20,6 +20,12 @@ interface MapSearchProps {
   boundaryPolygon?: BoundaryGeoJSON | null;
   radiusMiles?: number;
   hoveredLocationId?: string | null;
+  // Bumped only when a search is actually (re-)submitted (Search/Enter,
+  // a suggestion, "My Location") -- NOT when Type of Care or other
+  // filters change the result set for the same search. Drives whether
+  // the map re-fits its camera; see the fitBounds effect below for why
+  // that distinction matters.
+  searchGeneration?: number;
 }
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
@@ -37,15 +43,19 @@ const DEFAULT_ZOOM = 4.2;
 // for a real registered Map ID before production launch.
 const MAP_ID = 'DEMO_MAP_ID';
 
-function MapContent({ locations, userCoords, searchBounds, boundaryPolygon, radiusMiles, hoveredLocationId }: MapSearchProps) {
+function MapContent({ locations, userCoords, searchBounds, boundaryPolygon, radiusMiles, hoveredLocationId, searchGeneration }: MapSearchProps) {
   const map = useMap();
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
 
-  const hasZoomedToBounds = useRef<string>('');
   const hasZoomedToUser = useRef<string>('');
   const radiusCircleRef = useRef<google.maps.Circle | null>(null);
   const searchRegionRectRef = useRef<google.maps.Rectangle | null>(null);
   const boundaryDataRef = useRef<google.maps.Data | null>(null);
+  // Which searchGeneration the camera last fit to, and whether that fit
+  // already used real markers (as opposed to just the searched region's
+  // bounds, before results arrived) -- see the fitBounds effect below.
+  const lastFitGenerationRef = useRef<number>(-1);
+  const hasFitWithMarkersRef = useRef<boolean>(false);
 
   // Memoized so this is a stable reference across renders that don't
   // actually change the location data -- without this, the marker-sync
@@ -94,9 +104,12 @@ function MapContent({ locations, userCoords, searchBounds, boundaryPolygon, radi
   // plain rectangle (the ~50mi query box, or a state's real extent when
   // that IS the real shape) when it wasn't -- most ZIP codes aren't
   // mapped as polygons in OpenStreetMap, or the lookup can fail for any
-  // reason. Never both at once. Neutral gray (not the Radius circle's
-  // blue) so the two don't read as the same kind of indicator -- gray is
-  // "the searched area," blue is "the distance filter you picked."
+  // reason. Never both at once. searchBounds/boundaryPolygon only ever
+  // arrive here once a search is actually submitted (SearchHero
+  // withholds them before that), so this never shows for a location
+  // that's merely been picked from the autocomplete dropdown but not
+  // searched yet. Bold violet -- distinct from the red pins and the blue
+  // Radius circle, and visible against a dense cluster of dots.
   useEffect(() => {
     if (!map) return;
 
@@ -113,9 +126,9 @@ function MapContent({ locations, userCoords, searchBounds, boundaryPolygon, radi
           east: searchBounds.east,
           west: searchBounds.west,
         },
-        strokeColor: '#6b7280',
-        strokeOpacity: 0.6,
-        strokeWeight: 1.5,
+        strokeColor: '#7c3aed',
+        strokeOpacity: 0.9,
+        strokeWeight: 3,
         fillOpacity: 0,
         clickable: false,
         map,
@@ -145,9 +158,9 @@ function MapContent({ locations, userCoords, searchBounds, boundaryPolygon, radi
       const data = new google.maps.Data();
       data.addGeoJson({ type: 'Feature', properties: {}, geometry: boundaryPolygon });
       data.setStyle({
-        strokeColor: '#6b7280',
-        strokeOpacity: 0.8,
-        strokeWeight: 2,
+        strokeColor: '#7c3aed',
+        strokeOpacity: 0.9,
+        strokeWeight: 3,
         fillOpacity: 0,
         clickable: false,
       });
@@ -175,10 +188,23 @@ function MapContent({ locations, userCoords, searchBounds, boundaryPolygon, radi
     // zoom:11, which is why a state search kept zooming in instead of
     // fitting the state).
     if (searchBounds) {
-      const key = `${JSON.stringify(searchBounds)}|${locationsWithCoords.length}`;
-      if (hasZoomedToBounds.current !== key) {
-        hasZoomedToBounds.current = key;
+      const generation = searchGeneration ?? 0;
+      if (lastFitGenerationRef.current !== generation) {
+        // A genuinely new search (Search/Enter, a suggestion, "My
+        // Location") -- allow fitting again, and reset the "already did
+        // our final fit" lock below.
+        lastFitGenerationRef.current = generation;
+        hasFitWithMarkersRef.current = false;
+      }
 
+      // Refining Type of Care (or anything else that changes the result
+      // count for the SAME search) should only change which pins show,
+      // not move the camera again -- once this generation has fit to real
+      // markers, further changes to locationsWithCoords for that same
+      // generation don't trigger another fit. Until real markers exist
+      // yet (the fetch is still in flight when this first runs), this
+      // stays unlocked so the effect can re-fit tightly once they arrive.
+      if (!hasFitWithMarkersRef.current) {
         // Google's official state/region boundary is often much bigger
         // than where any actual result is -- Hawaii's includes the
         // uninhabited Northwestern Hawaiian Islands out past -178, which
@@ -227,6 +253,14 @@ function MapContent({ locations, userCoords, searchBounds, boundaryPolygon, radi
 
           map.fitBounds(bounds, { top: 40, right: 56, bottom: 40, left: 56 });
 
+          if (locationsWithCoords.length > 0) {
+            // Fit real markers, not just the searched region's own
+            // bounds -- lock further fits for this generation so a later
+            // Type of Care refinement (changing which/how many pins show
+            // for this SAME search) doesn't move the camera again.
+            hasFitWithMarkersRef.current = true;
+          }
+
           // Dev-only: fitBounds settles asynchronously, so the camera's
           // final center/zoom aren't known until the map reports 'idle'.
           // Logging them lets a specific problem case (e.g. "Alaska looks
@@ -270,7 +304,7 @@ function MapContent({ locations, userCoords, searchBounds, boundaryPolygon, radi
         map.moveCamera({ center: userCoords, zoom: 11 });
       }
     }
-  }, [searchBounds, userCoords, map]);
+  }, [searchBounds, userCoords, map, searchGeneration, locationsWithCoords]);
 
   const handlePinClick = (location: LocationWithDetails) => {
     setSelectedLocationId(location.location_id);

@@ -68,13 +68,15 @@ const initialRadiusParam = initialSearchParams.get('radius');
 
 function SearchHeroContent({ onSearch }: SearchHeroProps) {
   const [location, setLocation] = useState(initialLocationParam);
-  // Starts with nothing checked -- picking at least one Type of Care is a
-  // deliberate part of the search now (see loadLocations: zero services
-  // selected shows nothing rather than silently searching every service,
-  // which also avoids surfacing older, out-of-scope data in the same
-  // table that happens to share the same publish flags).
+  // Defaults to every service checked -- one fewer thing to set up before
+  // searching. Nothing shows until a location is actually searched
+  // regardless (hasSubmittedSearch below), so this doesn't skip that
+  // gate; it just means the common case (search a location, see
+  // everything) takes one less click. ensureServicesSelected() still
+  // covers the edge case of someone manually unchecking every box and
+  // then submitting.
   const [selectedServices, setSelectedServices] = useState<string[]>(
-    initialCareParam ? initialCareParam.split(',').filter(Boolean) : []
+    initialCareParam ? initialCareParam.split(',').filter(Boolean) : Object.keys(ALL_SERVICES)
   );
   const [viewMode, setViewMode] = useState<'map' | 'list'>(
     initialSearchParams.get('view') === 'list' ? 'list' : 'map'
@@ -92,6 +94,11 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   // so the map/grid populates immediately instead of showing the empty
   // prompt for a location that's already known.
   const [hasSubmittedSearch, setHasSubmittedSearch] = useState(!!initialLocationParam);
+  // Bumped only on a genuine new submit (Search/Enter/"My Location") --
+  // NOT when Type of Care or other filters change the result set for the
+  // same search. MapSearch uses this to know when it's allowed to move
+  // the camera again vs. just update which pins are showing.
+  const [searchGeneration, setSearchGeneration] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const placesLibrary = useMapsLibrary('places');
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -545,6 +552,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
     setShowSuggestions(false);
     if (!location.trim()) return;
     setHasSubmittedSearch(true);
+    setSearchGeneration((n) => n + 1);
 
     // Cleared immediately (not just left to be overwritten once the fetch
     // below resolves) so a stale outline from the previous search doesn't
@@ -617,6 +625,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
         // close on "near me" instead of re-fitting a stale region.
         setSearchBounds(null);
         setHasSubmittedSearch(true);
+        setSearchGeneration((n) => n + 1);
 
         try {
           const response = await fetch(
@@ -901,9 +910,17 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
                 <div className={hasSubmittedSearch ? 'animate-fade-in-up' : ''}>
                   <MapSearch
                     locations={filteredLocations}
-                    userCoords={userCoords}
-                    searchBounds={searchBounds}
-                    boundaryPolygon={boundaryPolygon}
+                    // All three withheld until a search is actually
+                    // submitted -- userCoords/searchBounds/boundaryPolygon
+                    // otherwise get set the moment an autocomplete
+                    // suggestion is picked (before Search is even
+                    // clicked), which moved the camera and drew the
+                    // region outline for a location that hasn't actually
+                    // been searched yet.
+                    userCoords={hasSubmittedSearch ? userCoords : null}
+                    searchBounds={hasSubmittedSearch ? searchBounds : null}
+                    boundaryPolygon={hasSubmittedSearch ? boundaryPolygon : null}
+                    searchGeneration={searchGeneration}
                     radiusMiles={distanceRadius}
                   />
                 </div>
