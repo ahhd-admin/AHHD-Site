@@ -3,6 +3,7 @@ import { APIProvider, Map, AdvancedMarker, InfoWindow, useMap } from '@vis.gl/re
 import type { LocationWithDetails } from '../types/database';
 import { buildProviderSlug } from '../lib/slug';
 import { formatDistance } from '../lib/geoUtils';
+import { saveHomeScrollPosition } from '../lib/scrollRestoration';
 
 interface SearchBoundsLiteral {
   south: number;
@@ -280,6 +281,7 @@ function MapContent({ locations, userCoords, searchBounds, radiusMiles }: MapSea
               )}
               <button
                 onClick={() => {
+                  saveHomeScrollPosition();
                   window.location.href = `/provider/${buildProviderSlug(location.organization?.organization_name || location.location_name || '', location.achc_source_id)}`;
                 }}
                 className="mt-2 w-full text-center px-3 py-1.5 bg-primary-500 text-white rounded-md text-sm font-medium hover:bg-primary-600 transition-colors"

@@ -139,7 +139,12 @@ export default function ProviderDetailPage({ locationId }: ProviderDetailPagePro
                 <h1 className="text-3xl md:text-4xl font-heading font-bold mb-3 text-white">
                   {location.organization?.organization_name || 'Healthcare Provider'}
                 </h1>
-                {location.location_name && (
+                {/* location_name is currently a straight copy of the
+                    organization name for essentially every record (real
+                    DBA names haven't been extracted yet -- see
+                    MVP-Rollout-Roadmap.md) -- only show it once it's
+                    genuinely a different name. */}
+                {location.location_name && location.location_name !== location.organization?.organization_name && (
                   <p className="text-xl text-primary-200 mb-4">{location.location_name}</p>
                 )}
               </div>

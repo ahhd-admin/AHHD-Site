@@ -8,6 +8,8 @@ import type { LocationWithDetails } from '../types/database';
 import { calculateDistance } from '../lib/geoUtils';
 import { ALL_SERVICES } from '../lib/serviceCategories';
 import { resolveStateCode } from '../lib/usStates';
+import { HOME_SCROLL_STORAGE_KEY } from '../lib/scrollRestoration';
+import { saveSearchCache, loadSearchCache } from '../lib/searchResultsCache';
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
 
@@ -20,6 +22,15 @@ const BROAD_LOCATION_TERMS = new Set(['usa', 'us', 'u.s.', 'u.s.a.', 'united sta
 // dataset (~7,200 MVP-scope locations) so "no filter" genuinely means "show
 // everything," not an arbitrary small slice of it.
 const RESULTS_LIMIT = 8000;
+
+// See src/lib/scrollRestoration.ts for the full explanation -- the
+// browser's own scroll restoration fires before this page's async
+// results fetch resolves, landing on the wrong position. Overriding it
+// to 'manual' here so only the explicit restore effect below (which waits
+// for results to actually render) ever moves the scroll position.
+if (typeof window !== 'undefined' && 'scrollRestoration' in window.history) {
+  window.history.scrollRestoration = 'manual';
+}
 
 interface SearchHeroProps {
   onSearch?: (location: string, serviceType?: string) => void;
@@ -79,18 +90,46 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   const suggestionsRef = useRef<HTMLDivElement>(null);
 
   // Restores a search coming in from the URL (e.g. hitting the browser
-  // back button after clicking into a provider page) -- coordinates/bounds
-  // aren't persisted in the URL, just the search terms, so this re-runs
-  // the same geocode + fetch a fresh submit would. Runs once on mount
-  // only; handleSearch is defined later in this component, but that's
-  // fine here -- effect callbacks aren't invoked until after the full
-  // render (and every const in it) has already executed.
+  // back button after clicking into a provider page). Checks the results
+  // cache first -- if this exact search (location + care types) was run
+  // recently, reuse its results/coordinates directly instead of visibly
+  // reloading/repopulating the map on every back navigation. Falls back
+  // to a real geocode + fetch (same as a fresh submit) if there's no
+  // cache hit, e.g. the cache expired or this is a bookmarked/shared URL.
+  // Runs once on mount only; handleSearch is defined later in this
+  // component, but that's fine here -- effect callbacks aren't invoked
+  // until after the full render (and every const in it) has already
+  // executed.
   useEffect(() => {
-    if (initialLocationParam) {
-      handleSearch();
+    if (!initialLocationParam) return;
+
+    const cached = loadSearchCache(initialLocationParam, selectedServices);
+    if (cached) {
+      setLocations(cached.results);
+      setUserCoords(cached.userCoords);
+      setSearchBounds(cached.searchBounds);
+      return;
     }
+
+    handleSearch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Restores the scroll position captured just before navigating to a
+  // provider page (see ProviderCard.tsx / MapSearch.tsx), once results
+  // have actually finished loading. Restoring any earlier -- e.g. on the
+  // native browser attempt this deliberately overrides via
+  // scrollRestoration = 'manual' above -- would land on a position that
+  // doesn't exist yet on the still-short, not-yet-repopulated page.
+  useEffect(() => {
+    if (loading) return;
+    const saved = sessionStorage.getItem(HOME_SCROLL_STORAGE_KEY);
+    if (!saved) return;
+    sessionStorage.removeItem(HOME_SCROLL_STORAGE_KEY);
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: Number(saved), behavior: 'auto' });
+    });
+  }, [loading]);
 
   // Mirrors the current search into the URL's query string (via
   // replaceState, not pushState -- refining filters shouldn't spam the
@@ -126,7 +165,11 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   useEffect(() => {
     if (!hasSubmittedSearch) return;
     const timer = setTimeout(() => {
-      loadLocations(location, selectedServices);
+      // Safe to read userCoords/searchBounds from state directly here
+      // (unlike handleSearch) -- this effect only ever fires on a later
+      // tick after any geocode from the original submit has already
+      // settled, not synchronously alongside setUserCoords/setSearchBounds.
+      loadLocations(location, selectedServices, userCoords, searchBounds);
     }, 400);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -182,7 +225,18 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const loadLocations = async (searchText: string, services: string[]) => {
+  const loadLocations = async (
+    searchText: string,
+    services: string[],
+    // Only used to cache alongside the results (see saveSearchCache
+    // below) -- NOT read from userCoords/searchBounds state directly,
+    // since callers that just geocoded call setUserCoords/setSearchBounds
+    // and then this in the same synchronous tick, before those state
+    // updates have actually landed; reading state here would cache the
+    // previous search's (possibly null) coordinates.
+    coordsForCache: { lat: number; lng: number } | null = null,
+    boundsForCache: { south: number; west: number; north: number; east: number } | null = null
+  ) => {
     if (services.length === 0) {
       // No care type checked -- show nothing rather than dropping the
       // service filter entirely, which would silently surface older,
@@ -266,6 +320,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
       })) || [];
 
       setLocations(mapped);
+      saveSearchCache(searchText, services, mapped, coordsForCache, boundsForCache);
     } catch (error) {
       console.error('Error loading locations:', error);
     } finally {
@@ -307,13 +362,13 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   // Shared between the centered hero card (compact) and the post-search
   // filters row (full-size) so Type of Care can be picked before the very
   // first search, not just to refine an already-populated map.
+  // Stacked, not a flat row -- "All Care" sits above a divider with the
+  // three real options indented beneath it, so it reads as a master
+  // toggle over sub-options rather than a fourth sibling choice (a thin
+  // vertical divider in a single row wasn't enough of a visual cue).
   const renderCareTypeCheckboxes = (compact: boolean) => (
-    <div
-      className={`flex flex-wrap items-center gap-x-4 gap-y-2 border-2 border-neutral-300 rounded-xl bg-white ${
-        compact ? 'px-3 py-1.5 min-h-[40px]' : 'px-3 py-2 min-h-[44px]'
-      }`}
-    >
-      <label className="flex items-center gap-1.5 cursor-pointer">
+    <div className={`border-2 border-neutral-300 rounded-xl bg-white ${compact ? 'p-1.5' : 'p-2'}`}>
+      <label className="flex items-center gap-1.5 cursor-pointer px-1.5 py-1">
         <input
           type="checkbox"
           checked={allServicesSelected}
@@ -322,18 +377,19 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
         />
         <span className={`font-semibold text-neutral-900 ${compact ? 'text-xs' : 'text-sm'}`}>All Care</span>
       </label>
-      <span className="hidden sm:block w-px h-5 bg-neutral-300" aria-hidden="true" />
-      {allServiceSlugs.map((slug) => (
-        <label key={slug} className="flex items-center gap-1.5 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={selectedServices.includes(slug)}
-            onChange={() => toggleService(slug)}
-            className="w-4 h-4 rounded border-neutral-300 text-primary-500 focus:ring-2 focus:ring-primary-200"
-          />
-          <span className={`text-neutral-700 ${compact ? 'text-xs' : 'text-sm'}`}>{ALL_SERVICES[slug]}</span>
-        </label>
-      ))}
+      <div className="mt-1 pt-1.5 border-t border-neutral-200 pl-5 space-y-1">
+        {allServiceSlugs.map((slug) => (
+          <label key={slug} className="flex items-center gap-1.5 cursor-pointer px-1.5 py-0.5">
+            <input
+              type="checkbox"
+              checked={selectedServices.includes(slug)}
+              onChange={() => toggleService(slug)}
+              className="w-3.5 h-3.5 rounded border-neutral-300 text-primary-500 focus:ring-2 focus:ring-primary-200"
+            />
+            <span className={`text-neutral-700 ${compact ? 'text-xs' : 'text-sm'}`}>{ALL_SERVICES[slug]}</span>
+          </label>
+        ))}
+      </div>
     </div>
   );
 
@@ -385,6 +441,13 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
     if (!location.trim()) return;
     setHasSubmittedSearch(true);
 
+    // Tracked locally rather than read back from userCoords/searchBounds
+    // state below -- setUserCoords/setSearchBounds won't have landed by
+    // the time loadLocations runs in this same synchronous flow, so
+    // reading state here would cache the previous search's coordinates.
+    let effectiveCoords = userCoords;
+    let effectiveBounds = searchBounds;
+
     if (!userCoords) {
       try {
         const response = await fetch(
@@ -399,24 +462,25 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             lng: result.geometry.location.lng
           };
           setUserCoords(coords);
+          effectiveCoords = coords;
 
           const box = result.geometry.bounds || result.geometry.viewport;
-          setSearchBounds(
-            box
-              ? {
-                  south: box.southwest.lat,
-                  west: box.southwest.lng,
-                  north: box.northeast.lat,
-                  east: box.northeast.lng,
-                }
-              : null
-          );
+          const bounds = box
+            ? {
+                south: box.southwest.lat,
+                west: box.southwest.lng,
+                north: box.northeast.lat,
+                east: box.northeast.lng,
+              }
+            : null;
+          setSearchBounds(bounds);
+          effectiveBounds = bounds;
         }
       } catch (error) {
         console.error('Geocoding error:', error);
       }
     }
-    loadLocations(location, ensureServicesSelected());
+    loadLocations(location, ensureServicesSelected(), effectiveCoords, effectiveBounds);
   };
 
   const handleGeolocation = () => {
@@ -456,7 +520,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             // read `location` from this closure, so it would search with
             // the previous (likely empty) text. Using the just-resolved
             // address directly instead.
-            loadLocations(cityResult.formatted_address, ensureServicesSelected());
+            loadLocations(cityResult.formatted_address, ensureServicesSelected(), coords, null);
           }
         } catch (error) {
           console.error('Reverse geocoding error:', error);
@@ -644,7 +708,10 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
 
         <div className="flex flex-col lg:flex-row gap-4">
           <div className="w-full lg:w-[300px] lg:flex-shrink-0">
-            <div className="lg:sticky lg:top-4">{searchPanel}</div>
+            {/* top-24 (96px), not top-4 -- the site header is sticky at
+                80px tall with z-50, which otherwise sits on top of (and
+                covers) this panel once both are stuck simultaneously. */}
+            <div className="lg:sticky lg:top-24">{searchPanel}</div>
           </div>
 
           {/* flex-1 column matches the panel's column exactly (own
