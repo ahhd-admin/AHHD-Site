@@ -118,12 +118,18 @@ export default function ProviderDetailPage({ locationId }: ProviderDetailPagePro
           )}
 
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            {/* primary-300 on navy-700 measures 6.24:1 -- clears AA (4.5) but
-                not AAA (7). primary-200 measures 7.45:1, clearing AAA. */}
+            {/* primary-200 on navy-700 measures 7.45:1 (AAA). This has to be
+                set directly on each <a>, not just the wrapping div -- a
+                global `a { text-primary-600 }` rule in index.css sets an
+                explicit color on every anchor, and an explicit rule on the
+                element itself always wins over an inherited one, no matter
+                which layer it's in. That left "Home"/"Find Care" rendering
+                primary-600 (3.05:1 on navy-700 -- fails AA) despite the
+                parent div being styled correctly. */}
             <div className="flex items-center gap-2 text-primary-200 mb-4">
-              <a href="/" className="hover:text-white">Home</a>
+              <a href="/" className="text-primary-200 hover:text-white">Home</a>
               <span>/</span>
-              <a href="/find-care" className="hover:text-white">Find Care</a>
+              <a href="/find-care" className="text-primary-200 hover:text-white">Find Care</a>
               <span>/</span>
               <span className="text-white">Provider Details</span>
             </div>

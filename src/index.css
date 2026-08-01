@@ -46,16 +46,24 @@
     @apply px-6 py-3 rounded-lg font-medium transition-all duration-200 focus:outline-none focus:ring-4;
   }
 
+  /* white on primary-500 measured 2.90:1 -- badly fails the 4.5:1 AA floor
+     for text, on the site's main call-to-action button. primary-700
+     clears AA (5.47:1); hover moves one step darker (primary-800,
+     8.05:1) to keep the existing "darker on hover" feedback pattern. */
   .btn-primary {
-    @apply btn bg-primary-500 text-white hover:bg-primary-600 focus:ring-primary-200;
+    @apply btn bg-primary-700 text-white hover:bg-primary-800 focus:ring-primary-200;
   }
 
   .btn-secondary {
     @apply btn bg-navy-600 text-white hover:bg-navy-700 focus:ring-navy-200;
   }
 
+  /* primary-600 text on white measured 3.78:1 -- fails AA. primary-700
+     clears it (5.47:1); border updated to match so it's one color
+     reference instead of two, and also clears the 3:1 non-text/UI-component
+     contrast minimum (the old border-primary-500 measured 2.90:1). */
   .btn-outline {
-    @apply btn border-2 border-primary-500 text-primary-600 hover:bg-primary-50 focus:ring-primary-200;
+    @apply btn border-2 border-primary-700 text-primary-700 hover:bg-primary-50 focus:ring-primary-200;
   }
 
   .card {
@@ -84,8 +92,12 @@
     @apply badge bg-warning-100 text-warning-700;
   }
 
+  /* primary-700 text on primary-100 measured 4.21:1 -- fails even the AA
+     floor (4.5). navy-800 measures 11.33:1 (AAA). Currently unused
+     anywhere in the app, fixed at the definition so a future use starts
+     compliant instead of inheriting a pre-existing violation. */
   .badge-primary {
-    @apply badge bg-primary-100 text-primary-700;
+    @apply badge bg-primary-100 text-navy-800;
   }
 }
 
