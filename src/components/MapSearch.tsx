@@ -220,6 +220,14 @@ function MapContent({ locations, userCoords, searchBounds, radiusMiles }: MapSea
                     width: '24px',
                     height: '24px',
                     cursor: 'pointer',
+                    // The browser's default tap/focus highlight renders as
+                    // a solid rectangle sized to the marker's hit area (not
+                    // the visible 24px circle), and during the click-driven
+                    // zoom transition that highlight gets scaled up with
+                    // the map tiles -- which reads as a big pixelated flash
+                    // right as you click, before the zoom settles.
+                    WebkitTapHighlightColor: 'transparent',
+                    outline: 'none',
                   }}
                 />
               </AdvancedMarker>

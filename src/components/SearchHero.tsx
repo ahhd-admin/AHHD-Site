@@ -1,4 +1,4 @@
-import { Search, MapPin, Map, List, ChevronDown, Filter, X, Crosshair } from 'lucide-react';
+import { Search, MapPin, Map, List, Crosshair } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { APIProvider, useMapsLibrary } from '@vis.gl/react-google-maps';
 import MapSearch from './MapSearch';
@@ -6,7 +6,7 @@ import ProviderCard from './ProviderCard';
 import { supabase } from '../lib/supabase';
 import type { LocationWithDetails } from '../types/database';
 import { calculateDistance } from '../lib/geoUtils';
-import { SERVICE_CATEGORIES, ALL_SERVICES } from '../lib/serviceCategories';
+import { ALL_SERVICES } from '../lib/serviceCategories';
 import { resolveStateCode } from '../lib/usStates';
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
@@ -34,8 +34,6 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   // happens to share the same published/publicly-displayable flags; an
   // empty filter would show that too.
   const [selectedServices, setSelectedServices] = useState<string[]>(Object.keys(ALL_SERVICES));
-  const [showFilterMenu, setShowFilterMenu] = useState(false);
-  const filterMenuRef = useRef<HTMLDivElement>(null);
   const [viewMode, setViewMode] = useState<'map' | 'list'>('map');
   const [locations, setLocations] = useState<LocationWithDetails[]>([]);
   const [loading, setLoading] = useState(false);
@@ -103,12 +101,6 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
-        filterMenuRef.current &&
-        !filterMenuRef.current.contains(event.target as Node)
-      ) {
-        setShowFilterMenu(false);
-      }
-      if (
         suggestionsRef.current &&
         !suggestionsRef.current.contains(event.target as Node) &&
         !inputRef.current?.contains(event.target as Node)
@@ -122,6 +114,14 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   }, []);
 
   const loadLocations = async (searchText: string, services: string[]) => {
+    if (services.length === 0) {
+      // No care type checked -- show nothing rather than dropping the
+      // service filter entirely, which would silently surface older,
+      // out-of-scope data that happens to share the same publish flags.
+      setLocations([]);
+      return;
+    }
+
     setLoading(true);
     try {
       let query = supabase
@@ -212,26 +212,11 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
     );
   };
 
-  const toggleCategory = (categoryKey: string) => {
-    const category = SERVICE_CATEGORIES[categoryKey as keyof typeof SERVICE_CATEGORIES];
-    const allSelected = category.services.every(s => selectedServices.includes(s));
+  const allServiceSlugs = Object.keys(ALL_SERVICES);
+  const allServicesSelected = allServiceSlugs.every((s) => selectedServices.includes(s));
 
-    if (allSelected) {
-      setSelectedServices(prev => prev.filter(s => !category.services.includes(s)));
-    } else {
-      setSelectedServices(prev => {
-        const filtered = prev.filter(s => !category.services.includes(s));
-        return [...filtered, ...category.services];
-      });
-    }
-  };
-
-  const removeFilter = (serviceSlug: string) => {
-    setSelectedServices(prev => prev.filter(s => s !== serviceSlug));
-  };
-
-  const clearAllFilters = () => {
-    setSelectedServices([]);
+  const toggleAllServices = () => {
+    setSelectedServices(allServicesSelected ? [] : allServiceSlugs);
   };
 
   const handleSelectSuggestion = async (placeId: string, description: string) => {
@@ -518,70 +503,39 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             </div>
 
             <div className="flex flex-col sm:flex-row gap-3 items-start">
-              <div className="flex-1 w-full sm:w-auto" ref={filterMenuRef}>
+              <div className="flex-1 w-full sm:w-auto">
                 <label className="block text-sm font-semibold text-navy-800 mb-2">
-                  Service Category
+                  Type of Care
                 </label>
-                <button
-                  type="button"
-                  onClick={() => setShowFilterMenu(!showFilterMenu)}
-                  className="w-full px-4 h-[50px] text-base border-2 border-neutral-300 rounded-xl focus:outline-none focus:ring-4 focus:ring-primary-200 focus:border-primary-500 transition-all bg-white flex items-center justify-between text-left"
-                >
-                  <div className="flex items-center gap-2">
-                    <Filter className="w-4 h-4 text-neutral-500" />
-                    <span className={selectedServices.length === 0 ? 'text-neutral-500' : 'text-neutral-800 font-medium'}>
-                      {selectedServices.length === 0 ? 'Filter by service category' : `${selectedServices.length} selected`}
-                    </span>
-                  </div>
-                  <ChevronDown className={`w-5 h-5 text-neutral-400 transition-transform ${showFilterMenu ? 'rotate-180' : ''}`} />
-                </button>
-
-                {showFilterMenu && (
-                  <div className="absolute z-[10000] mt-2 bg-white border-2 border-neutral-300 rounded-xl shadow-2xl overflow-hidden w-[320px] max-h-[500px] overflow-y-auto">
-                    {Object.entries(SERVICE_CATEGORIES).map(([categoryKey, category]) => {
-                      const allSelected = category.services.every(s => selectedServices.includes(s));
-                      const someSelected = category.services.some(s => selectedServices.includes(s));
-
-                      return (
-                        <div key={categoryKey} className="border-b border-neutral-200 last:border-b-0">
-                          <label className="flex items-center px-4 py-3 hover:bg-primary-50 cursor-pointer bg-neutral-50">
-                            <input
-                              type="checkbox"
-                              checked={allSelected}
-                              onChange={() => toggleCategory(categoryKey)}
-                              className="w-4 h-4 rounded border-neutral-300 text-primary-500 focus:ring-2 focus:ring-primary-200 mr-3 flex-shrink-0"
-                              style={{ opacity: someSelected && !allSelected ? 0.5 : 1 }}
-                            />
-                            <span className="text-neutral-900 font-semibold leading-none">{category.label}</span>
-                          </label>
-                          <div className="pl-4">
-                            {category.services.map((serviceSlug) => (
-                              <label key={serviceSlug} className="flex items-center px-4 py-2.5 hover:bg-primary-50 cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  checked={selectedServices.includes(serviceSlug)}
-                                  onChange={() => toggleService(serviceSlug)}
-                                  className="w-4 h-4 rounded border-neutral-300 text-primary-500 focus:ring-2 focus:ring-primary-200 mr-3 flex-shrink-0"
-                                />
-                                <span className="text-neutral-700 text-sm leading-none">{ALL_SERVICES[serviceSlug as keyof typeof ALL_SERVICES]}</span>
-                              </label>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })}
-                    {selectedServices.length > 0 && (
-                      <div className="p-3 bg-neutral-50 border-t border-neutral-200">
-                        <button
-                          onClick={clearAllFilters}
-                          className="w-full py-2 px-3 text-sm font-medium text-neutral-700 hover:text-navy-800 transition-colors"
-                        >
-                          Clear all filters
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
+                {/* Flat, always-visible checkboxes instead of a dropdown --
+                    one click to change what's shown instead of two (open
+                    menu, then pick), and every option is visible up front
+                    rather than hidden behind "N selected." "All Care" is a
+                    master toggle that reflects (and can set) whether every
+                    individual box below is checked. */}
+                <div className="flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3 border-2 border-neutral-300 rounded-xl bg-white min-h-[50px]">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={allServicesSelected}
+                      onChange={toggleAllServices}
+                      className="w-4 h-4 rounded border-neutral-300 text-primary-500 focus:ring-2 focus:ring-primary-200"
+                    />
+                    <span className="text-sm font-semibold text-neutral-900">All Care</span>
+                  </label>
+                  <span className="hidden sm:block w-px h-5 bg-neutral-300" aria-hidden="true" />
+                  {allServiceSlugs.map((slug) => (
+                    <label key={slug} className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedServices.includes(slug)}
+                        onChange={() => toggleService(slug)}
+                        className="w-4 h-4 rounded border-neutral-300 text-primary-500 focus:ring-2 focus:ring-primary-200"
+                      />
+                      <span className="text-sm text-neutral-700">{ALL_SERVICES[slug]}</span>
+                    </label>
+                  ))}
+                </div>
               </div>
 
               <div className="w-full sm:w-[140px]">
@@ -602,37 +556,6 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
                 </select>
               </div>
             </div>
-
-            {selectedServices.length > 0 && (
-              <div className="mt-4 pt-4 border-t border-neutral-200">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-semibold text-navy-800">Active Filters</span>
-                  <button
-                    onClick={clearAllFilters}
-                    className="text-xs text-neutral-600 hover:text-navy-800 font-medium transition-colors"
-                  >
-                    Clear all
-                  </button>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {selectedServices.map((serviceSlug) => (
-                    <span
-                      key={serviceSlug}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary-100 text-primary-700 rounded-lg text-sm font-medium"
-                    >
-                      {ALL_SERVICES[serviceSlug as keyof typeof ALL_SERVICES]}
-                      <button
-                        onClick={() => removeFilter(serviceSlug)}
-                        className="hover:bg-primary-200 rounded-full p-0.5 transition-colors"
-                        aria-label={`Remove ${ALL_SERVICES[serviceSlug as keyof typeof ALL_SERVICES]} filter`}
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
 
           <div className="bg-neutral-50 p-4">

@@ -118,10 +118,12 @@ export default function ProviderDetailPage({ locationId }: ProviderDetailPagePro
           )}
 
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex items-center gap-2 text-primary-300 mb-4">
-              <a href="/" className="hover:text-primary-200">Home</a>
+            {/* primary-300 on navy-700 measures 6.24:1 -- clears AA (4.5) but
+                not AAA (7). primary-200 measures 7.45:1, clearing AAA. */}
+            <div className="flex items-center gap-2 text-primary-200 mb-4">
+              <a href="/" className="hover:text-white">Home</a>
               <span>/</span>
-              <a href="/find-care" className="hover:text-primary-200">Find Care</a>
+              <a href="/find-care" className="hover:text-white">Find Care</a>
               <span>/</span>
               <span className="text-white">Provider Details</span>
             </div>
@@ -138,7 +140,10 @@ export default function ProviderDetailPage({ locationId }: ProviderDetailPagePro
 
               {activeAccreditations.length > 0 && (
                 <div className="flex-shrink-0 ml-6">
-                  <div className="bg-success-500 text-white px-4 py-2 rounded-lg flex items-center gap-2">
+                  {/* success-500 with white text measures 3.99:1 -- fails WCAG AA
+                      for normal-size text (needs 4.5:1). success-800 measures
+                      7.68:1, clearing even the AAA bar (7:1). */}
+                  <div className="bg-success-800 text-white px-4 py-2 rounded-lg flex items-center gap-2">
                     <Shield className="w-5 h-5" />
                     <span className="font-medium">Accredited</span>
                   </div>
