@@ -146,6 +146,31 @@ function MapContent({ locations, userCoords, searchBounds, radiusMiles }: MapSea
           bounds.extend({ lat: sw.lat() - latBuffer, lng: sw.lng() - lngBuffer });
 
           map.fitBounds(bounds, { top: 40, right: 56, bottom: 40, left: 56 });
+
+          // Dev-only: fitBounds settles asynchronously, so the camera's
+          // final center/zoom aren't known until the map reports 'idle'.
+          // Logging them lets a specific problem case (e.g. "Alaska looks
+          // off-center") be reported back with exact numbers instead of a
+          // description -- open the browser console, run the search, and
+          // copy the logged object.
+          if (import.meta.env.DEV) {
+            google.maps.event.addListenerOnce(map, 'idle', () => {
+              const center = map.getCenter();
+              const finalZoom = map.getZoom();
+              console.log('[map fit]', {
+                resultCount: locationsWithCoords.length,
+                geocodedRegion: searchBounds,
+                fitBoundsTarget: {
+                  south: bounds.getSouthWest().lat(),
+                  west: bounds.getSouthWest().lng(),
+                  north: bounds.getNorthEast().lat(),
+                  east: bounds.getNorthEast().lng(),
+                },
+                settledCenter: center ? { lat: center.lat(), lng: center.lng() } : null,
+                settledZoom: finalZoom,
+              });
+            });
+          }
         }
       }
       return;
