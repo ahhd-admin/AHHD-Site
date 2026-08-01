@@ -37,8 +37,12 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   const [viewMode, setViewMode] = useState<'map' | 'list'>('map');
   const [locations, setLocations] = useState<LocationWithDetails[]>([]);
   const [loading, setLoading] = useState(false);
-  const [hasSearched, setHasSearched] = useState(false);
   const [distanceRadius, setDistanceRadius] = useState<number>(999999);
+  // True once Search/Enter/a suggestion/"My Location" has actually been
+  // used -- typing alone (or toggling Type of Care) doesn't set this, so
+  // the map stays empty and the search bar stays centered until there's a
+  // deliberate submit, instead of populating pins on every keystroke.
+  const [hasSubmittedSearch, setHasSubmittedSearch] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const placesLibrary = useMapsLibrary('places');
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -53,15 +57,25 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   const autocompleteService = useRef<google.maps.places.AutocompleteService | null>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
 
-  // Auto-search as you type/select filters, debounced -- no need to hit
-  // Search first. handleSearch (button/Enter) still runs on top of this for
-  // geocoding-based map centering and "near me" distance sorting.
+  // Once a search has actually been submitted, refining Type of Care still
+  // auto-refreshes live (debounced) without needing to hit Search again --
+  // but nothing fetches before that first submit, and retyping the
+  // location text doesn't refetch either (location changes only take
+  // effect on the next explicit submit, which is also what re-geocodes for
+  // the map's zoom/center). hasSubmittedSearch is deliberately read but not
+  // listed as a dependency: handleSearch/handleSelectSuggestion/
+  // handleGeolocation already fire the *first* fetch directly, so this
+  // effect only needs to react to selectedServices changing thereafter --
+  // listing hasSubmittedSearch too would double-fetch the moment a search
+  // is first submitted.
   useEffect(() => {
+    if (!hasSubmittedSearch) return;
     const timer = setTimeout(() => {
       loadLocations(location, selectedServices);
     }, 400);
     return () => clearTimeout(timer);
-  }, [location, selectedServices]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedServices]);
 
   useEffect(() => {
     if (placesLibrary) {
@@ -219,10 +233,43 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
     setSelectedServices(allServicesSelected ? [] : allServiceSlugs);
   };
 
+  // Shared between the centered hero card (compact) and the post-search
+  // filters row (full-size) so Type of Care can be picked before the very
+  // first search, not just to refine an already-populated map.
+  const renderCareTypeCheckboxes = (compact: boolean) => (
+    <div
+      className={`flex flex-wrap items-center gap-x-4 gap-y-2 border-2 border-neutral-300 rounded-xl bg-white ${
+        compact ? 'px-3 py-1.5 min-h-[40px]' : 'px-3 py-2 min-h-[44px]'
+      }`}
+    >
+      <label className="flex items-center gap-1.5 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={allServicesSelected}
+          onChange={toggleAllServices}
+          className="w-4 h-4 rounded border-neutral-300 text-primary-500 focus:ring-2 focus:ring-primary-200"
+        />
+        <span className={`font-semibold text-neutral-900 ${compact ? 'text-xs' : 'text-sm'}`}>All Care</span>
+      </label>
+      <span className="hidden sm:block w-px h-5 bg-neutral-300" aria-hidden="true" />
+      {allServiceSlugs.map((slug) => (
+        <label key={slug} className="flex items-center gap-1.5 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={selectedServices.includes(slug)}
+            onChange={() => toggleService(slug)}
+            className="w-4 h-4 rounded border-neutral-300 text-primary-500 focus:ring-2 focus:ring-primary-200"
+          />
+          <span className={`text-neutral-700 ${compact ? 'text-xs' : 'text-sm'}`}>{ALL_SERVICES[slug]}</span>
+        </label>
+      ))}
+    </div>
+  );
+
   const handleSelectSuggestion = async (placeId: string, description: string) => {
     setLocation(description);
     setShowSuggestions(false);
-    setHasSearched(true);
+    setHasSubmittedSearch(true);
 
     if (placesLibrary) {
       const geocoder = new google.maps.Geocoder();
@@ -259,9 +306,10 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
 
   const handleSearch = async () => {
     setShowSuggestions(false);
-    setHasSearched(true);
+    if (!location.trim()) return;
+    setHasSubmittedSearch(true);
 
-    if (location.trim() && !userCoords) {
+    if (!userCoords) {
       try {
         const response = await fetch(
           `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(location)}&key=${GOOGLE_MAPS_API_KEY}`
@@ -296,7 +344,6 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   };
 
   const handleGeolocation = () => {
-    setHasSearched(true);
     if (!navigator.geolocation) {
       alert('Geolocation is not supported by your browser');
       return;
@@ -314,6 +361,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
         // left over from a previous state/city search so the map zooms in
         // close on "near me" instead of re-fitting a stale region.
         setSearchBounds(null);
+        setHasSubmittedSearch(true);
 
         try {
           const response = await fetch(
@@ -327,7 +375,12 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             ) || data.results[0];
 
             setLocation(cityResult.formatted_address);
-            handleSearch();
+            // Not delegating to handleSearch() here -- setLocation() above
+            // hasn't committed yet by the time a synchronous call would
+            // read `location` from this closure, so it would search with
+            // the previous (likely empty) text. Using the just-resolved
+            // address directly instead.
+            loadLocations(cityResult.formatted_address, selectedServices);
           }
         } catch (error) {
           console.error('Reverse geocoding error:', error);
@@ -375,37 +428,97 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   });
 
   return (
-    <section className="bg-gradient-to-br from-primary-50 via-white to-navy-50 py-8 md:py-16">
+    <section className="bg-gradient-to-br from-primary-50 via-white to-navy-50 py-6 md:py-10">
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
-        <div className="text-center mb-8">
-          <h1 className="text-4xl md:text-5xl font-heading font-bold text-navy-800 mb-4">
+        <div className="text-center mb-4 md:mb-6">
+          <h1 className="text-3xl md:text-4xl font-heading font-bold text-navy-800 mb-2">
             Find Quality Care Providers
           </h1>
 
-          <p className="text-lg text-neutral-700 max-w-3xl mx-auto leading-relaxed">
+          <p className="text-base text-neutral-700 max-w-3xl mx-auto leading-relaxed">
             Search accredited home care, hospice, and healthcare services in your area
           </p>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-xl border border-neutral-200 overflow-hidden">
-          <div className="p-4 md:p-6 border-b border-neutral-200">
-            <div className="mb-4">
-              <label htmlFor="location-search" className="block text-sm font-semibold text-navy-800 mb-2">
-                Location
-              </label>
-              <div className="flex gap-2">
+        {/* The map is the hero -- search lives as a single floating bar on
+            top of it instead of a separate form stacked above, so there's
+            one place to type instead of two. Before a search it's centered
+            with a prompt (nothing to show yet); once there's a location,
+            it collapses to a slim bar pinned at the top so re-searching
+            stays one click away without taking up permanent space. */}
+        <div className="relative rounded-2xl overflow-hidden shadow-xl border border-neutral-200 bg-white">
+          <div className={!hasSubmittedSearch ? 'pointer-events-none' : ''}>
+            {loading ? (
+              <div className="h-[500px] md:h-[600px] flex items-center justify-center bg-neutral-50">
+                <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-primary-200 border-t-primary-600"></div>
+              </div>
+            ) : viewMode === 'list' && hasSubmittedSearch ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4 min-h-[500px] md:min-h-[600px] bg-neutral-50">
+                {filteredLocations.map((loc) => (
+                  <ProviderCard key={loc.location_id} location={loc} />
+                ))}
+              </div>
+            ) : (
+              <MapSearch
+                locations={filteredLocations}
+                userCoords={userCoords}
+                searchBounds={searchBounds}
+                radiusMiles={distanceRadius}
+              />
+            )}
+          </div>
+
+          {!hasSubmittedSearch && !loading && (
+            <div className="absolute inset-0 bg-white/60" aria-hidden="true" />
+          )}
+
+          {/* Same horizontal span (inset-x-3, full container width) in both
+              states -- only the vertical position and inner padding change
+              between the centered pre-search prompt and the pinned
+              post-search bar, so the box doesn't visually resize/reflow
+              during the transition, just slide. Also gives the input row
+              real room instead of being squeezed into a narrow centered
+              card. */}
+          <div
+            className={`absolute z-20 inset-x-3 transition-all duration-300 ${
+              hasSubmittedSearch ? 'top-3' : 'top-1/2 -translate-y-1/2'
+            }`}
+          >
+            <div className="bg-white rounded-xl shadow-2xl border border-neutral-200 p-3 sm:p-4">
+              {!hasSubmittedSearch && (
+                <div className="text-center mb-3">
+                  <div className="inline-flex items-center justify-center w-12 h-12 bg-primary-100 rounded-2xl mb-2">
+                    <MapPin className="w-6 h-6 text-navy-800" />
+                  </div>
+                  <p className="font-semibold text-navy-800">Where are you looking for care?</p>
+                  <p className="text-sm text-neutral-600 mt-0.5">Enter a state, address, or ZIP code</p>
+                </div>
+              )}
+
+              {/* Input gets its own full-width row, buttons wrap to a row
+                  below on narrow screens -- previously the input shared a
+                  row with two buttons even on small phones, squeezing it
+                  down far enough that the placeholder text got clipped. */}
+              <div className="flex flex-col sm:flex-row gap-2">
                 <div className="flex-1 relative">
-                  <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 text-neutral-400 w-5 h-5 z-10 pointer-events-none" />
+                  <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 w-4 h-4 z-10 pointer-events-none" />
                   <input
                     ref={inputRef}
                     id="location-search"
                     type="text"
                     value={location}
                     onChange={(e) => {
-                      setLocation(e.target.value);
+                      const value = e.target.value;
+                      setLocation(value);
                       setUserCoords(null);
                       setSearchBounds(null);
                       setShowSuggestions(true);
+                      if (!value.trim()) {
+                        // Cleared back to empty -- fully reset to the idle
+                        // prompt state rather than leaving stale results
+                        // showing behind a bar that no longer reflects it.
+                        setHasSubmittedSearch(false);
+                      }
                     }}
                     onFocus={() => setShowSuggestions(true)}
                     onKeyDown={(e) => {
@@ -416,8 +529,9 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
                         setShowSuggestions(false);
                       }
                     }}
-                    placeholder="Enter city, address, or ZIP code"
-                    className="w-full pl-12 pr-24 md:pr-4 h-[50px] text-base border-2 border-neutral-300 rounded-xl focus:outline-none focus:ring-4 focus:ring-primary-200 focus:border-primary-500 transition-all"
+                    placeholder="City, state, or ZIP code"
+                    aria-label="Search location"
+                    className="w-full pl-9 pr-3 h-[48px] text-base border-2 border-neutral-300 rounded-lg focus:outline-none focus:ring-4 focus:ring-primary-200 focus:border-primary-500 transition-all"
                     autoComplete="off"
                   />
                   {showSuggestions && suggestions.length > 0 && (
@@ -437,115 +551,65 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
                       ))}
                     </div>
                   )}
+                </div>
+
+                <div className="flex gap-2">
                   <button
                     onClick={handleGeolocation}
                     disabled={gettingLocation}
-                    className="md:hidden absolute right-11 top-1/2 -translate-y-1/2 p-2 text-neutral-500 hover:text-primary-600 disabled:opacity-50 transition-colors z-20"
+                    className="btn-outline flex-1 sm:flex-none px-3 h-[48px] flex items-center justify-center gap-1.5 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
                     aria-label="Use my location"
                     title="Use my location"
                   >
-                    <Crosshair className={`w-5 h-5 ${gettingLocation ? 'animate-pulse' : ''}`} />
+                    <Crosshair className={`w-4 h-4 ${gettingLocation ? 'animate-pulse' : ''}`} />
+                    <span className="text-sm">My Location</span>
                   </button>
+
                   <button
                     onClick={handleSearch}
-                    className="md:hidden absolute right-2 top-1/2 -translate-y-1/2 p-2 text-primary-600 hover:text-primary-700 transition-colors z-20"
-                    aria-label="Search"
+                    className="btn-primary flex-1 sm:flex-none px-3 sm:px-4 h-[48px] flex items-center justify-center gap-1.5 whitespace-nowrap"
                   >
-                    <Search className="w-5 h-5" />
-                  </button>
-                </div>
-
-                <button
-                  onClick={handleGeolocation}
-                  disabled={gettingLocation}
-                  className="hidden md:flex btn-outline px-4 h-[50px] items-center gap-2 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
-                  title="Use my location"
-                >
-                  <Crosshair className={`w-4 h-4 ${gettingLocation ? 'animate-pulse' : ''}`} />
-                  <span className="hidden lg:inline">My Location</span>
-                </button>
-
-                <button
-                  onClick={handleSearch}
-                  className="hidden md:flex btn-primary px-6 h-[50px] items-center gap-2 whitespace-nowrap"
-                >
-                  <Search className="w-4 h-4" />
-                  Search
-                </button>
-
-                <div className="flex items-center gap-1 bg-neutral-100 rounded-lg p-1 h-[50px]">
-                  <button
-                    onClick={() => setViewMode('map')}
-                    className={`flex items-center justify-center w-10 md:w-auto md:gap-1.5 md:px-3 h-full rounded-md text-sm font-medium transition-all ${
-                      viewMode === 'map'
-                        ? 'bg-white text-navy-800 shadow-sm'
-                        : 'text-neutral-600 hover:text-navy-800'
-                    }`}
-                    aria-label="Map view"
-                  >
-                    <Map className="w-4 h-4" />
-                    <span className="hidden md:inline">Map</span>
-                  </button>
-                  <button
-                    onClick={() => setViewMode('list')}
-                    className={`flex items-center justify-center w-10 md:w-auto md:gap-1.5 md:px-3 h-full rounded-md text-sm font-medium transition-all ${
-                      viewMode === 'list'
-                        ? 'bg-white text-navy-800 shadow-sm'
-                        : 'text-neutral-600 hover:text-navy-800'
-                    }`}
-                    aria-label="List view"
-                  >
-                    <List className="w-4 h-4" />
-                    <span className="hidden md:inline">List</span>
+                    <Search className="w-4 h-4" />
+                    <span className="text-sm">Search</span>
                   </button>
                 </div>
               </div>
+
+              {/* Type of Care is pickable before the first search too, not
+                  just to refine an already-populated map -- it's part of
+                  what's being searched for, not an afterthought. */}
+              {!hasSubmittedSearch && (
+                <div className="mt-2">
+                  <p className="text-xs font-semibold text-navy-800 mb-1">Type of Care</p>
+                  {renderCareTypeCheckboxes(true)}
+                </div>
+              )}
             </div>
+          </div>
+        </div>
 
-            <div className="flex flex-col sm:flex-row gap-3 items-start">
-              <div className="flex-1 w-full sm:w-auto">
-                <label className="block text-sm font-semibold text-navy-800 mb-2">
-                  Type of Care
-                </label>
-                {/* Flat, always-visible checkboxes instead of a dropdown --
-                    one click to change what's shown instead of two (open
-                    menu, then pick), and every option is visible up front
-                    rather than hidden behind "N selected." "All Care" is a
-                    master toggle that reflects (and can set) whether every
-                    individual box below is checked. */}
-                <div className="flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3 border-2 border-neutral-300 rounded-xl bg-white min-h-[50px]">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={allServicesSelected}
-                      onChange={toggleAllServices}
-                      className="w-4 h-4 rounded border-neutral-300 text-primary-500 focus:ring-2 focus:ring-primary-200"
-                    />
-                    <span className="text-sm font-semibold text-neutral-900">All Care</span>
-                  </label>
-                  <span className="hidden sm:block w-px h-5 bg-neutral-300" aria-hidden="true" />
-                  {allServiceSlugs.map((slug) => (
-                    <label key={slug} className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={selectedServices.includes(slug)}
-                        onChange={() => toggleService(slug)}
-                        className="w-4 h-4 rounded border-neutral-300 text-primary-500 focus:ring-2 focus:ring-primary-200"
-                      />
-                      <span className="text-sm text-neutral-700">{ALL_SERVICES[slug]}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
+        {/* Radius and the map/list toggle only show up once there's
+            something to refine -- but Type of Care lives in the hero card
+            above before that point, since it's part of the search itself. */}
+        {hasSubmittedSearch && (
+          <div className="mt-3 flex flex-col sm:flex-row gap-3 items-start">
+            <fieldset className="flex-1 w-full sm:w-auto border-0 p-0 m-0 min-w-0">
+              <legend className="block text-sm font-semibold text-navy-800 mb-1.5">
+                Type of Care
+              </legend>
+              {renderCareTypeCheckboxes(false)}
+            </fieldset>
 
-              <div className="w-full sm:w-[140px]">
-                <label className="block text-sm font-semibold text-navy-800 mb-2">
+            <div className="flex gap-2 items-end w-full sm:w-auto">
+              <div className="flex-1 sm:w-[130px]">
+                <label htmlFor="radius-select" className="block text-sm font-semibold text-navy-800 mb-1.5">
                   Radius
                 </label>
                 <select
+                  id="radius-select"
                   value={distanceRadius}
                   onChange={(e) => setDistanceRadius(Number(e.target.value))}
-                  className="w-full px-3 h-[50px] text-sm border-2 border-neutral-300 rounded-xl focus:outline-none focus:ring-4 focus:ring-primary-200 focus:border-primary-500 transition-all bg-white text-neutral-800 font-medium"
+                  className="w-full px-3 h-[44px] text-sm border-2 border-neutral-300 rounded-xl focus:outline-none focus:ring-4 focus:ring-primary-200 focus:border-primary-500 transition-all bg-white text-neutral-800 font-medium"
                 >
                   <option value={999999}>Any distance</option>
                   <option value={5}>Within 5 mi</option>
@@ -555,49 +619,43 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
                   <option value={100}>Within 100 mi</option>
                 </select>
               </div>
+
+              <div className="flex items-center gap-1 bg-neutral-100 rounded-lg p-1 h-[44px]">
+                <button
+                  onClick={() => setViewMode('map')}
+                  className={`flex items-center justify-center w-9 sm:w-auto sm:gap-1.5 sm:px-3 h-full rounded-md text-sm font-medium transition-all ${
+                    viewMode === 'map'
+                      ? 'bg-white text-navy-800 shadow-sm'
+                      : 'text-neutral-600 hover:text-navy-800'
+                  }`}
+                  aria-label="Map view"
+                  aria-pressed={viewMode === 'map'}
+                >
+                  <Map className="w-4 h-4" />
+                  <span className="hidden sm:inline">Map</span>
+                </button>
+                <button
+                  onClick={() => setViewMode('list')}
+                  className={`flex items-center justify-center w-9 sm:w-auto sm:gap-1.5 sm:px-3 h-full rounded-md text-sm font-medium transition-all ${
+                    viewMode === 'list'
+                      ? 'bg-white text-navy-800 shadow-sm'
+                      : 'text-neutral-600 hover:text-navy-800'
+                  }`}
+                  aria-label="List view"
+                  aria-pressed={viewMode === 'list'}
+                >
+                  <List className="w-4 h-4" />
+                  <span className="hidden sm:inline">List</span>
+                </button>
+              </div>
             </div>
-          </div>
-
-          <div className="bg-neutral-50 p-4">
-            {loading ? (
-              <div className="flex items-center justify-center py-20">
-                <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-primary-200 border-t-primary-600"></div>
-              </div>
-            ) : viewMode === 'map' ? (
-              <MapSearch
-                locations={filteredLocations}
-                userCoords={userCoords}
-                searchBounds={searchBounds}
-                radiusMiles={distanceRadius}
-              />
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {filteredLocations.map((location) => (
-                  <ProviderCard key={location.location_id} location={location} />
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {filteredLocations.length === 0 && !loading && hasSearched && (
-          <div className="mt-6 text-center">
-            <p className="text-neutral-600">
-              No providers found matching your criteria. Try adjusting your filters or search location.
-            </p>
           </div>
         )}
 
-        {filteredLocations.length === 0 && !loading && !hasSearched && (
+        {hasSubmittedSearch && filteredLocations.length === 0 && !loading && (
           <div className="mt-6 text-center">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-primary-100 rounded-2xl mb-4">
-              <Search className="w-8 h-8 text-primary-600" />
-            </div>
-            <p className="text-lg font-semibold text-navy-800 mb-2">
-              Start your search above
-            </p>
-            <p className="text-neutral-600 max-w-md mx-auto">
-              Enter a city, address, or ZIP code to find accredited healthcare providers near you. You can also filter by service category and distance.
+            <p className="text-neutral-600">
+              No providers found matching your criteria. Try adjusting your filters or search location.
             </p>
           </div>
         )}

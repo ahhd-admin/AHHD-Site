@@ -316,27 +316,13 @@ export default function MapSearch(props: MapSearchProps) {
             fullscreenControl={true}
             streetViewControl={false}
             zoomControl={true}
-            // Latitude stays US-focused (a bit below Hawaii's southern tip
-            // to a bit above Alaska's northern tip); longitude is left
-            // essentially open. It has to be -- Google's official state
-            // bounds for both AK and HI extend well past a "just the
-            // visible land" box: Alaska's includes the Aleutian chain,
-            // which stretches almost to the antimeridian, and Hawaii's
-            // includes the uninhabited Northwestern Hawaiian Islands out
-            // past -178. A narrower west limit (this used to be -170)
-            // clips fitBounds's target box, and Google silently recenters
-            // the camera to whatever fits inside the restriction instead
-            // of erroring -- which is what made Alaska look off-center and
-            // Hawaii fail to show at all.
-            restriction={{
-              latLngBounds: {
-                north: 75,
-                south: 15,
-                west: -180,
-                east: 180
-              },
-              strictBounds: false
-            }}
+            // No pan restriction -- a bounded box kept causing exactly the
+            // Alaska/Hawaii positioning problems it was meant to prevent
+            // (Google silently recenters the camera to whatever fits
+            // inside the restriction when a fitBounds target doesn't,
+            // which is what made those searches look off-center/missing).
+            // The initial view is still centered on the contiguous US via
+            // DEFAULT_CENTER/DEFAULT_ZOOM below regardless of this.
             minZoom={3}
           >
             <MapContent {...props} />
