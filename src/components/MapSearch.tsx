@@ -4,6 +4,7 @@ import type { LocationWithDetails } from '../types/database';
 import { buildProviderSlug } from '../lib/slug';
 import { formatDistance } from '../lib/geoUtils';
 import { saveHomeScrollPosition } from '../lib/scrollRestoration';
+import type { BoundaryGeoJSON } from '../lib/boundaryLookup';
 
 interface SearchBoundsLiteral {
   south: number;
@@ -16,6 +17,7 @@ interface MapSearchProps {
   locations: LocationWithDetails[];
   userCoords?: { lat: number; lng: number } | null;
   searchBounds?: SearchBoundsLiteral | null;
+  boundaryPolygon?: BoundaryGeoJSON | null;
   radiusMiles?: number;
   hoveredLocationId?: string | null;
 }
@@ -35,7 +37,7 @@ const DEFAULT_ZOOM = 4.2;
 // for a real registered Map ID before production launch.
 const MAP_ID = 'DEMO_MAP_ID';
 
-function MapContent({ locations, userCoords, searchBounds, radiusMiles, hoveredLocationId }: MapSearchProps) {
+function MapContent({ locations, userCoords, searchBounds, boundaryPolygon, radiusMiles, hoveredLocationId }: MapSearchProps) {
   const map = useMap();
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
 
@@ -43,6 +45,7 @@ function MapContent({ locations, userCoords, searchBounds, radiusMiles, hoveredL
   const hasZoomedToUser = useRef<string>('');
   const radiusCircleRef = useRef<google.maps.Circle | null>(null);
   const searchRegionRectRef = useRef<google.maps.Rectangle | null>(null);
+  const boundaryDataRef = useRef<google.maps.Data | null>(null);
 
   // Memoized so this is a stable reference across renders that don't
   // actually change the location data -- without this, the marker-sync
@@ -85,16 +88,15 @@ function MapContent({ locations, userCoords, searchBounds, radiusMiles, hoveredL
     };
   }, [userCoords, radiusMiles, map]);
 
-  // Outlines the actual region the search is querying against -- a
-  // state's real extent, or the ~50mi box expanded around a geocoded
-  // city/zip/address (see SEARCH_RADIUS_DEGREES in SearchHero.tsx). A
-  // plain thin outline (no fill) so it reads as a lightweight "here's the
-  // searched area" reference rather than competing visually with the
-  // Radius circle above, which represents a different thing (the
-  // client-side distance filter, when one's actually selected). Google's
-  // Rectangle doesn't support a dashed stroke directly (that needs a
-  // Polyline with icon symbols) -- solid thin stroke is a reasonable
-  // stand-in.
+  // Outlines the actual region the search covers. Prefers the real traced
+  // shape (a city's/state's actual outline, via the boundary-lookup Edge
+  // Function -- see the effect below) when one was found; falls back to a
+  // plain rectangle (the ~50mi query box, or a state's real extent when
+  // that IS the real shape) when it wasn't -- most ZIP codes aren't
+  // mapped as polygons in OpenStreetMap, or the lookup can fail for any
+  // reason. Never both at once. Neutral gray (not the Radius circle's
+  // blue) so the two don't read as the same kind of indicator -- gray is
+  // "the searched area," blue is "the distance filter you picked."
   useEffect(() => {
     if (!map) return;
 
@@ -103,7 +105,7 @@ function MapContent({ locations, userCoords, searchBounds, radiusMiles, hoveredL
       searchRegionRectRef.current = null;
     }
 
-    if (searchBounds) {
+    if (searchBounds && !boundaryPolygon) {
       searchRegionRectRef.current = new google.maps.Rectangle({
         bounds: {
           north: searchBounds.north,
@@ -125,7 +127,40 @@ function MapContent({ locations, userCoords, searchBounds, radiusMiles, hoveredL
         searchRegionRectRef.current.setMap(null);
       }
     };
-  }, [searchBounds, map]);
+  }, [searchBounds, boundaryPolygon, map]);
+
+  // The real traced boundary, when the lookup found one. google.maps.Data
+  // accepts GeoJSON natively and handles Polygon/MultiPolygon without
+  // needing to manually walk the ring structure the way a Polygon overlay
+  // would require.
+  useEffect(() => {
+    if (!map) return;
+
+    if (boundaryDataRef.current) {
+      boundaryDataRef.current.setMap(null);
+      boundaryDataRef.current = null;
+    }
+
+    if (boundaryPolygon) {
+      const data = new google.maps.Data();
+      data.addGeoJson({ type: 'Feature', properties: {}, geometry: boundaryPolygon });
+      data.setStyle({
+        strokeColor: '#6b7280',
+        strokeOpacity: 0.8,
+        strokeWeight: 2,
+        fillOpacity: 0,
+        clickable: false,
+      });
+      data.setMap(map);
+      boundaryDataRef.current = data;
+    }
+
+    return () => {
+      if (boundaryDataRef.current) {
+        boundaryDataRef.current.setMap(null);
+      }
+    };
+  }, [boundaryPolygon, map]);
 
   useEffect(() => {
     if (!map) return;

@@ -10,6 +10,7 @@ import { ALL_SERVICES } from '../lib/serviceCategories';
 import { resolveStateCode } from '../lib/usStates';
 import { HOME_SCROLL_STORAGE_KEY } from '../lib/scrollRestoration';
 import { saveSearchCache, loadSearchCache } from '../lib/searchResultsCache';
+import { fetchSearchBoundary, type BoundaryGeoJSON } from '../lib/boundaryLookup';
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
 
@@ -99,6 +100,14 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   // rather than a fixed close-in zoom, so a state search shows the whole
   // state instead of zooming in on one point in it.
   const [searchBounds, setSearchBounds] = useState<{ south: number; west: number; north: number; east: number } | null>(null);
+  // The real traced boundary shape for the current search (a city's
+  // actual outline, a state's actual outline), when the boundary-lookup
+  // Edge Function found one -- MapSearch draws this instead of the
+  // rectangle/circle when present. Best-effort only: stays null (falls
+  // back to the existing region indicator) for anything the lookup
+  // doesn't cover -- most ZIP codes, or if the lookup fails for any
+  // reason at all.
+  const [boundaryPolygon, setBoundaryPolygon] = useState<BoundaryGeoJSON | null>(null);
   const [gettingLocation, setGettingLocation] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [suggestions, setSuggestions] = useState<google.maps.places.AutocompletePrediction[]>([]);
@@ -537,6 +546,15 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
     if (!location.trim()) return;
     setHasSubmittedSearch(true);
 
+    // Cleared immediately (not just left to be overwritten once the fetch
+    // below resolves) so a stale outline from the previous search doesn't
+    // linger on screen while this one is in flight.
+    setBoundaryPolygon(null);
+    // Fired without awaiting -- this is a best-effort visual extra (see
+    // boundaryLookup.ts), never something the actual search should wait
+    // on or be slowed down by.
+    fetchSearchBoundary(location).then(setBoundaryPolygon);
+
     // Tracked locally rather than read back from userCoords/searchBounds
     // state below -- setUserCoords/setSearchBounds won't have landed by
     // the time loadLocations runs in this same synchronous flow, so
@@ -704,6 +722,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
               setLocation(value);
               setUserCoords(null);
               setSearchBounds(null);
+              setBoundaryPolygon(null);
               setShowSuggestions(true);
               if (!value.trim()) {
                 // Cleared back to empty -- fully reset to the idle prompt
@@ -884,6 +903,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
                     locations={filteredLocations}
                     userCoords={userCoords}
                     searchBounds={searchBounds}
+                    boundaryPolygon={boundaryPolygon}
                     radiusMiles={distanceRadius}
                   />
                 </div>
