@@ -647,45 +647,50 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             <div className="lg:sticky lg:top-4">{searchPanel}</div>
           </div>
 
+          {/* flex-1 column matches the panel's column exactly (own
+              rounded-2xl/border/shadow card starting at the same y), so
+              the count/toggle header lives INSIDE that card as its own
+              top bar rather than floating above it -- that gap was what
+              threw the two columns' top edges out of alignment before. */}
           <div className="flex-1 min-w-0">
-            {hasSubmittedSearch && !loading && (
-              <div className="flex items-center justify-between gap-3 mb-2 px-1">
-                <p className="text-sm text-neutral-600">
-                  {filteredLocations.length} accredited {filteredLocations.length === 1 ? 'provider' : 'providers'}
-                  {location && ` near ${location}`}
-                </p>
-                <div className="flex items-center gap-1 bg-neutral-100 rounded-lg p-1 h-[34px] flex-shrink-0">
-                  <button
-                    onClick={() => setViewMode('map')}
-                    className={`flex items-center justify-center w-7 sm:w-auto sm:gap-1.5 sm:px-3 h-full rounded-md text-sm font-medium transition-all ${
-                      viewMode === 'map'
-                        ? 'bg-white text-navy-800 shadow-sm'
-                        : 'text-neutral-600 hover:text-navy-800'
-                    }`}
-                    aria-label="Map view"
-                    aria-pressed={viewMode === 'map'}
-                  >
-                    <Map className="w-4 h-4" />
-                    <span className="hidden sm:inline">Map</span>
-                  </button>
-                  <button
-                    onClick={() => setViewMode('list')}
-                    className={`flex items-center justify-center w-7 sm:w-auto sm:gap-1.5 sm:px-3 h-full rounded-md text-sm font-medium transition-all ${
-                      viewMode === 'list'
-                        ? 'bg-white text-navy-800 shadow-sm'
-                        : 'text-neutral-600 hover:text-navy-800'
-                    }`}
-                    aria-label="Grid view"
-                    aria-pressed={viewMode === 'list'}
-                  >
-                    <LayoutGrid className="w-4 h-4" />
-                    <span className="hidden sm:inline">Grid</span>
-                  </button>
-                </div>
-              </div>
-            )}
-
             <div className="rounded-2xl overflow-hidden shadow-md border border-neutral-200 bg-white">
+              {hasSubmittedSearch && !loading && (
+                <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-neutral-200 bg-neutral-50">
+                  <p className="text-sm text-neutral-600">
+                    {filteredLocations.length} accredited {filteredLocations.length === 1 ? 'provider' : 'providers'}
+                    {location && ` near ${location}`}
+                  </p>
+                  <div className="flex items-center gap-1 bg-white border border-neutral-200 rounded-lg p-1 h-[34px] flex-shrink-0">
+                    <button
+                      onClick={() => setViewMode('map')}
+                      className={`flex items-center justify-center w-7 sm:w-auto sm:gap-1.5 sm:px-3 h-full rounded-md text-sm font-medium transition-all ${
+                        viewMode === 'map'
+                          ? 'bg-primary-100 text-navy-800'
+                          : 'text-neutral-600 hover:text-navy-800'
+                      }`}
+                      aria-label="Map view"
+                      aria-pressed={viewMode === 'map'}
+                    >
+                      <Map className="w-4 h-4" />
+                      <span className="hidden sm:inline">Map</span>
+                    </button>
+                    <button
+                      onClick={() => setViewMode('list')}
+                      className={`flex items-center justify-center w-7 sm:w-auto sm:gap-1.5 sm:px-3 h-full rounded-md text-sm font-medium transition-all ${
+                        viewMode === 'list'
+                          ? 'bg-primary-100 text-navy-800'
+                          : 'text-neutral-600 hover:text-navy-800'
+                      }`}
+                      aria-label="Grid view"
+                      aria-pressed={viewMode === 'list'}
+                    >
+                      <LayoutGrid className="w-4 h-4" />
+                      <span className="hidden sm:inline">Grid</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {loading ? (
                 <div className="h-[500px] md:h-[600px] flex items-center justify-center bg-neutral-50">
                   <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-primary-200 border-t-primary-600"></div>
