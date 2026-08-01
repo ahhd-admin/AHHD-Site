@@ -274,7 +274,21 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
           .map((p) => p.trim())
           .filter((p) => p && !BROAD_LOCATION_TERMS.has(p.toLowerCase()));
 
-        const orParts: string[] = [];
+        // Recognized state-code parts and everything else are collected
+        // separately and applied as two independent .or() calls rather
+        // than one combined list -- supabase-js's .or() appends a
+        // separate `or=` query param each time it's called (confirmed by
+        // reading postgrest-js's source), and PostgREST ANDs separate
+        // top-level params together (confirmed live against Supabase).
+        // That's what makes "Portland, ME" require BOTH a Maine state
+        // match AND a Portland city/zip match, instead of matching every
+        // Portland nationwide (no state constraint) unioned with every
+        // Maine location (regardless of city) -- which is what a single
+        // flat OR list of all parts produces, and was scattering results
+        // across the whole country for any city name that happens to
+        // exist in multiple states, not just Portland.
+        const stateOrParts: string[] = [];
+        const otherOrParts: string[] = [];
         for (const rawPart of parts.length > 0 ? parts : [trimmed]) {
           const part = rawPart.replace(/[%]/g, '');
           if (!part) continue;
@@ -290,19 +304,24 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             // it against city/postal_code as a generic 2-letter substring
             // produces a flood of false positives (e.g. "ME" matches any
             // city containing "me": Fremont, Sacramento, Yakima,
-            // Somerville...), which is what scattered "Portland, ME"
-            // results across the whole country instead of scoping to
-            // Maine. Only the state match applies for this part.
-            orParts.push(`state.ilike.%${stateCode}%`);
+            // Somerville...). Only the state match applies for this part.
+            stateOrParts.push(`state.ilike.%${stateCode}%`);
           } else {
-            orParts.push(`city.ilike.%${part}%`);
-            orParts.push(`postal_code.ilike.%${part}%`);
-            orParts.push(`state.ilike.%${part}%`);
+            otherOrParts.push(`city.ilike.%${part}%`);
+            otherOrParts.push(`postal_code.ilike.%${part}%`);
+            otherOrParts.push(`state.ilike.%${part}%`);
           }
         }
 
-        if (orParts.length > 0) {
-          query = query.or(orParts.join(','));
+        // No state part at all (just "Portland" alone, no state given) --
+        // matching every Portland nationwide is then the correct, expected
+        // behavior, not a bug; only AND in a state constraint when one was
+        // actually part of the search.
+        if (stateOrParts.length > 0) {
+          query = query.or(stateOrParts.join(','));
+        }
+        if (otherOrParts.length > 0) {
+          query = query.or(otherOrParts.join(','));
         }
       }
 

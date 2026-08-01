@@ -220,6 +220,13 @@ function MapContent({ locations, userCoords, searchBounds, radiusMiles, hoveredL
             position={{ lat: location.latitude!, lng: location.longitude! }}
             onClick={() => handlePinClick(location)}
             zIndex={isHovered ? 1 : 0}
+            // AdvancedMarker wraps children in its own content element,
+            // separate from the inner <div> below -- styling only the
+            // inner div (the previous fix) missed this outer element's
+            // own default tap/focus highlight, which is the more likely
+            // source of the still-reported pixelated flash on click: it
+            // scales up along with the map tiles during the zoom.
+            className="outline-none [-webkit-tap-highlight-color:transparent] focus:outline-none focus-visible:outline-none"
           >
             <div
               style={{
