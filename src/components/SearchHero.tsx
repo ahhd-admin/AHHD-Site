@@ -44,6 +44,11 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const placesLibrary = useMapsLibrary('places');
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
+  // The real geographic extent of the current search result (a whole
+  // state, a city, a zip) -- MapSearch fits the map to this when present,
+  // rather than a fixed close-in zoom, so a state search shows the whole
+  // state instead of zooming in on one point in it.
+  const [searchBounds, setSearchBounds] = useState<{ south: number; west: number; north: number; east: number } | null>(null);
   const [gettingLocation, setGettingLocation] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [suggestions, setSuggestions] = useState<google.maps.places.AutocompletePrediction[]>([]);
@@ -243,6 +248,24 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             lng: results[0].geometry.location.lng()
           };
           setUserCoords(coords);
+
+          // bounds is the real extent for a region result (state, city,
+          // zip); a street address only gets viewport, a smaller box
+          // around the point -- either way this is a LatLngBounds
+          // instance from the JS SDK, so its corners come from getters,
+          // not raw JSON properties like the REST-based geocode below.
+          const box = results[0].geometry.bounds || results[0].geometry.viewport;
+          setSearchBounds(
+            box
+              ? {
+                  south: box.getSouthWest().lat(),
+                  west: box.getSouthWest().lng(),
+                  north: box.getNorthEast().lat(),
+                  east: box.getNorthEast().lng(),
+                }
+              : null
+          );
+
           loadLocations(description, selectedServices);
         }
       });
@@ -267,6 +290,18 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             lng: result.geometry.location.lng
           };
           setUserCoords(coords);
+
+          const box = result.geometry.bounds || result.geometry.viewport;
+          setSearchBounds(
+            box
+              ? {
+                  south: box.southwest.lat,
+                  west: box.southwest.lng,
+                  north: box.northeast.lat,
+                  east: box.northeast.lng,
+                }
+              : null
+          );
         }
       } catch (error) {
         console.error('Geocoding error:', error);
@@ -290,6 +325,10 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
           lng: position.coords.longitude
         };
         setUserCoords(coords);
+        // GPS position is a real point, not a region -- clear any bounds
+        // left over from a previous state/city search so the map zooms in
+        // close on "near me" instead of re-fitting a stale region.
+        setSearchBounds(null);
 
         try {
           const response = await fetch(
@@ -380,6 +419,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
                     onChange={(e) => {
                       setLocation(e.target.value);
                       setUserCoords(null);
+                      setSearchBounds(null);
                       setShowSuggestions(true);
                     }}
                     onFocus={() => setShowSuggestions(true)}
@@ -603,8 +643,8 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             ) : viewMode === 'map' ? (
               <MapSearch
                 locations={filteredLocations}
-                searchLocation={location}
                 userCoords={userCoords}
+                searchBounds={searchBounds}
                 radiusMiles={distanceRadius}
               />
             ) : (
