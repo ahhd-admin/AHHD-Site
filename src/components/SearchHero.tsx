@@ -278,15 +278,27 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
         for (const rawPart of parts.length > 0 ? parts : [trimmed]) {
           const part = rawPart.replace(/[%]/g, '');
           if (!part) continue;
-          orParts.push(`city.ilike.%${part}%`);
-          orParts.push(`postal_code.ilike.%${part}%`);
 
           // The `state` column only ever stores 2-letter codes ("AK"), so a
           // typed full name ("Alaska") has to be translated first or it can
-          // never match. resolveStateCode also accepts an already-valid
-          // code, so this is safe to run unconditionally.
+          // never match. resolveStateCode also accepts an already-valid code.
           const stateCode = resolveStateCode(part);
-          orParts.push(`state.ilike.%${stateCode ?? part}%`);
+          if (stateCode) {
+            // A part that resolves to a real state code is almost
+            // certainly the state field of a structured address ("...,
+            // ME, USA"), not a city/zip fragment -- also ILIKE-matching
+            // it against city/postal_code as a generic 2-letter substring
+            // produces a flood of false positives (e.g. "ME" matches any
+            // city containing "me": Fremont, Sacramento, Yakima,
+            // Somerville...), which is what scattered "Portland, ME"
+            // results across the whole country instead of scoping to
+            // Maine. Only the state match applies for this part.
+            orParts.push(`state.ilike.%${stateCode}%`);
+          } else {
+            orParts.push(`city.ilike.%${part}%`);
+            orParts.push(`postal_code.ilike.%${part}%`);
+            orParts.push(`state.ilike.%${part}%`);
+          }
         }
 
         if (orParts.length > 0) {
