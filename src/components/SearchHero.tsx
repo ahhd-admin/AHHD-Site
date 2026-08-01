@@ -25,20 +25,24 @@ const BROAD_LOCATION_TERMS = new Set(['usa', 'us', 'u.s.', 'u.s.a.', 'united sta
 const RESULTS_LIMIT = 8000;
 
 // Half-width (in degrees) of the geographic box fetched around a
-// geocoded point for anything that isn't a whole state -- a city or zip
+// geocoded point, sized to how specific the search actually is -- a city
+// search benefits from a wide "surrounding metro area" box (a city or zip
 // search used to filter by literal text match on the city name, which
-// meant "Chicago, IL" excluded every real suburb (Evanston, Oak Park,
-// Naperville...) that doesn't happen to contain "Chicago" in its name,
-// while "Chicago Heights" only showed up by the accident of containing
-// that substring. ~0.75 degrees is roughly 50 miles -- generous enough to
-// cover a metro area's real surrounding region. 1 degree of latitude is a
-// near-constant ~69 miles everywhere; longitude varies with latitude
-// (shorter near the poles), but for the contiguous US this still lands
-// in a reasonable 50-65 mile range, which is fine for "show me the
-// surrounding area," not a precision distance tool (the Radius selector,
-// filtered client-side against the real calculated distance, is what
-// gives an exact answer).
-const SEARCH_RADIUS_DEGREES = 0.75;
+// meant "Chicago, IL" excluded every real suburb -- Evanston, Oak Park,
+// Naperville -- that doesn't happen to contain "Chicago" in its name),
+// but reusing that same wide box for a single ZIP code search meant
+// searching one Chicago ZIP code still showed almost the entire metro
+// area, spilling into Indiana/Michigan/Wisconsin -- a ZIP is a
+// specific, few-square-mile area, not a whole city. 1 degree of latitude
+// is a near-constant ~69 miles everywhere; longitude varies with
+// latitude (shorter near the poles), but for the contiguous US this
+// still lands close enough to use uniformly -- this is "show the right
+// scale of area for what was searched," not a precision distance tool
+// (the Radius selector, filtered client-side against the real calculated
+// distance, is what gives an exact answer).
+const CITY_RADIUS_DEGREES = 0.75; // ~50mi -- city/locality searches
+const ZIP_RADIUS_DEGREES = 0.12; // ~8mi -- a ZIP code's own scale
+const ADDRESS_RADIUS_DEGREES = 0.06; // ~4mi -- an exact address, tighter still
 
 // See src/lib/scrollRestoration.ts for the full explanation -- the
 // browser's own scroll restoration fires before this page's async
@@ -299,14 +303,15 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
 
       if (!isBroadTerm) {
         if (bounds) {
-          // A real geographic region -- either a state's actual extent
-          // (passed through as-is from the geocode result), or a ~50mi
-          // box expanded around a geocoded city/zip/address (see
-          // SEARCH_RADIUS_DEGREES above and where `bounds` gets computed
-          // in handleSearch/handleSelectSuggestion). Querying by the real
-          // geography instead of text-matching the searched name is what
-          // lets "Chicago, IL" include Evanston, Oak Park, Naperville --
-          // real nearby suburbs that don't happen to contain "Chicago" in
+          // A real geographic region -- a state's actual extent, or a box
+          // expanded around a geocoded city/zip/address, sized to that
+          // search's own scale (see computeRegionBounds/CITY_RADIUS_
+          // DEGREES/ZIP_RADIUS_DEGREES/ADDRESS_RADIUS_DEGREES below,
+          // where `bounds` gets computed in handleSearch/
+          // handleSelectSuggestion). Querying by the real geography
+          // instead of text-matching the searched name is what lets
+          // "Chicago, IL" include Evanston, Oak Park, Naperville -- real
+          // nearby suburbs that don't happen to contain "Chicago" in
           // their name -- instead of only the literal city-name match.
           query = query
             .gte('latitude', bounds.south)
@@ -315,13 +320,13 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             .lte('longitude', bounds.east);
         } else if (coords) {
           // A point with no defined region (GPS "My Location", or a
-          // geocode result with no bounds at all) -- same ~50mi box,
+          // geocode result with no bounds at all) -- the city-scale box,
           // centered on the point instead of a search-provided region.
           query = query
-            .gte('latitude', coords.lat - SEARCH_RADIUS_DEGREES)
-            .lte('latitude', coords.lat + SEARCH_RADIUS_DEGREES)
-            .gte('longitude', coords.lng - SEARCH_RADIUS_DEGREES)
-            .lte('longitude', coords.lng + SEARCH_RADIUS_DEGREES);
+            .gte('latitude', coords.lat - CITY_RADIUS_DEGREES)
+            .lte('latitude', coords.lat + CITY_RADIUS_DEGREES)
+            .gte('longitude', coords.lng - CITY_RADIUS_DEGREES)
+            .lte('longitude', coords.lng + CITY_RADIUS_DEGREES);
         } else if (trimmed) {
           // Fallback for when geocoding hasn't resolved (or failed) --
           // the original text-based city/state/zip matching. Google
@@ -525,13 +530,15 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   };
 
   // Decides how much geography a geocoded result should actually cover.
-  // A state gets its own real extent (Google returns that directly);
-  // anything else (city, zip, street address) gets a fixed ~50mi box
-  // around the point instead of Google's own (often city-limits-tight)
-  // bounds -- that's specifically what makes a search include the real
-  // surrounding area (suburbs, nearby towns) rather than only the literal
-  // searched place. Always returns a real region, never null, since even
-  // an exact-address search should still show what's nearby.
+  // A state gets its own real extent (Google returns that directly).
+  // Everything else gets a box sized to how specific the search actually
+  // is -- a ZIP code or exact address is a much smaller, more precise
+  // area than a city, and using the wide city-scale box for a single ZIP
+  // search meant it showed almost the entire metro area (spilling into
+  // neighboring states for a Chicago ZIP) instead of scoping to that ZIP
+  // and its immediate surroundings. Always returns a real region, never
+  // null, since even an exact-address search should still show what's
+  // nearby.
   const computeRegionBounds = (
     coords: { lat: number; lng: number },
     types: string[] | undefined,
@@ -540,11 +547,18 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
     if (rawBounds && types?.includes('administrative_area_level_1')) {
       return rawBounds;
     }
+
+    const radius = types?.includes('postal_code')
+      ? ZIP_RADIUS_DEGREES
+      : types?.includes('street_address') || types?.includes('premise') || types?.includes('subpremise')
+        ? ADDRESS_RADIUS_DEGREES
+        : CITY_RADIUS_DEGREES;
+
     return {
-      south: coords.lat - SEARCH_RADIUS_DEGREES,
-      north: coords.lat + SEARCH_RADIUS_DEGREES,
-      west: coords.lng - SEARCH_RADIUS_DEGREES,
-      east: coords.lng + SEARCH_RADIUS_DEGREES,
+      south: coords.lat - radius,
+      north: coords.lat + radius,
+      west: coords.lng - radius,
+      east: coords.lng + radius,
     };
   };
 
