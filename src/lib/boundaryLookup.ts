@@ -43,13 +43,22 @@ export async function fetchStateBoundary(stateCode: string): Promise<BoundaryGeo
 export function computeBoundsFromGeoJSON(
   geo: BoundaryGeoJSON
 ): { south: number; west: number; north: number; east: number } {
-  let south = Infinity, west = Infinity, north = -Infinity, east = -Infinity;
+  let south = Infinity, north = -Infinity;
+  // Naive (non-antimeridian-aware) west/east, plus the two values needed to
+  // build the correct antimeridian-crossing box if it turns out we need
+  // one -- see below.
+  let minLng = Infinity, maxLng = -Infinity;
+  let minPositiveLng = Infinity; // closest to 180 from the east side (e.g. Alaska's Aleutians, ~172)
+  let maxNegativeLng = -Infinity; // closest to -180 from the west side (e.g. Alaska's panhandle, ~-130)
+
   const visitRing = (ring: number[][]) => {
     for (const [lng, lat] of ring) {
       if (lat < south) south = lat;
       if (lat > north) north = lat;
-      if (lng < west) west = lng;
-      if (lng > east) east = lng;
+      if (lng < minLng) minLng = lng;
+      if (lng > maxLng) maxLng = lng;
+      if (lng >= 0 && lng < minPositiveLng) minPositiveLng = lng;
+      if (lng < 0 && lng > maxNegativeLng) maxNegativeLng = lng;
     }
   };
   if (geo.type === 'Polygon') {
@@ -57,7 +66,42 @@ export function computeBoundsFromGeoJSON(
   } else {
     geo.coordinates.forEach((polygon) => polygon.forEach(visitRing));
   }
-  return { south, west, north, east };
+
+  // A region whose real shape crosses the antimeridian (confirmed live:
+  // Alaska's Aleutian islands run from ~172 east back around through
+  // 180/-180 to the panhandle at ~-130) makes the naive min/max longitude
+  // span nearly the entire globe (maxLng - minLng close to 360) instead of
+  // the region's real, much narrower width -- the naive box is wrong, not
+  // just imprecise. When that happens, the correct box is the OTHER one:
+  // from the smallest positive longitude (the easternmost point, going the
+  // short way) to the largest negative longitude (the westernmost point),
+  // wrapping through 180/-180 -- the same west > east convention the
+  // longitude query filter already uses for exactly this case (see
+  // SearchHero.tsx's antimeridian handling).
+  if (maxLng - minLng > 180 && minPositiveLng !== Infinity && maxNegativeLng !== -Infinity) {
+    return { south, west: minPositiveLng, north, east: maxNegativeLng };
+  }
+
+  return { south, west: minLng, north, east: maxLng };
+}
+
+// A plain (west+east)/2 midpoint is wrong for an antimeridian-wrapped box
+// (west > east, e.g. Alaska's west=172, east=-130 -- the naive midpoint,
+// 21, lands in the middle of the Pacific nowhere near Alaska) since the
+// box's real extent goes the OTHER way around, through 180/-180.
+export function computeCenterFromBounds(bounds: {
+  south: number;
+  west: number;
+  north: number;
+  east: number;
+}): { lat: number; lng: number } {
+  const lat = (bounds.south + bounds.north) / 2;
+  if (bounds.west <= bounds.east) {
+    return { lat, lng: (bounds.west + bounds.east) / 2 };
+  }
+  let lng = (bounds.west + bounds.east + 360) / 2;
+  if (lng > 180) lng -= 360;
+  return { lat, lng };
 }
 
 // Fetches the real traced boundary shape for a search (a city's actual

@@ -10,7 +10,7 @@ import { ALL_SERVICES } from '../lib/serviceCategories';
 import { resolveStateCode, extractStateCode, stateNameFromCode, findUniqueStateMatch } from '../lib/usStates';
 import { HOME_SCROLL_STORAGE_KEY } from '../lib/scrollRestoration';
 import { saveSearchCache, loadSearchCache } from '../lib/searchResultsCache';
-import { fetchSearchBoundary, fetchStateBoundary, computeBoundsFromGeoJSON, type BoundaryGeoJSON } from '../lib/boundaryLookup';
+import { fetchSearchBoundary, fetchStateBoundary, computeBoundsFromGeoJSON, computeCenterFromBounds, type BoundaryGeoJSON } from '../lib/boundaryLookup';
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
 
@@ -129,6 +129,12 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   const [distanceRadius, setDistanceRadius] = useState<number>(
     initialRadiusParam ? Number(initialRadiusParam) : 999999
   );
+  // Set when loadLocations's auto-expand-on-zero-results actually widened
+  // the search (see RADIUS_EXPANSION_STEPS below) -- previously the Radius
+  // dropdown just silently changed to a wider value with no explanation,
+  // which read as the app ignoring what was actually searched rather than
+  // honestly saying "nothing right here, so here's what's nearby instead."
+  const [autoExpandNotice, setAutoExpandNotice] = useState<string | null>(null);
   // True once Search/Enter/a suggestion/"My Location" has actually been
   // used -- typing alone (or toggling Type of Care) doesn't set this, so
   // the map stays empty and the search bar stays centered until there's a
@@ -454,6 +460,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
       // service filter entirely, which would silently surface older,
       // out-of-scope data that happens to share the same publish flags.
       setLocations([]);
+      setAutoExpandNotice(null);
       return;
     }
 
@@ -606,8 +613,24 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             .in('location_service_types.service_types.service_type_slug', services);
         }
 
-        const { data, error } = await query.limit(RESULTS_LIMIT);
-        if (error) throw error;
+        // Supabase/PostgREST caps any single response at 1000 rows by
+        // default regardless of what .limit() asks for -- confirmed live
+        // that a California search (2,714 real matches for the 3 MVP
+        // service types) silently truncated to exactly 1000. Paginating
+        // with .range() in PAGE_SIZE chunks up to RESULTS_LIMIT gets the
+        // real total for a search this large; the vast majority of
+        // searches are well under 1000 and finish after one page.
+        const PAGE_SIZE = 1000;
+        let data: any[] = [];
+        let offset = 0;
+        while (data.length < RESULTS_LIMIT) {
+          const { data: page, error } = await query.range(offset, offset + PAGE_SIZE - 1);
+          if (error) throw error;
+          if (!page || page.length === 0) break;
+          data = data.concat(page);
+          if (page.length < PAGE_SIZE) break;
+          offset += PAGE_SIZE;
+        }
 
         return (
           data?.map((loc: any) => ({
@@ -640,6 +663,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
       // restore.
       let usedBounds = bounds;
       let usedRadius = radius;
+      let expandedNotice: string | null = null;
       if (mapped.length === 0 && coords && bounds) {
         for (const step of RADIUS_EXPANSION_STEPS) {
           const wider = expandBoundsByMiles(bounds, step);
@@ -652,10 +676,12 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             usedBounds = wider;
             usedRadius = step;
             setDistanceRadius(step);
+            expandedNotice = `No providers found in the immediate area -- showing results within ${step} miles instead.`;
             break;
           }
         }
       }
+      setAutoExpandNotice(expandedNotice);
 
       setLocations(mapped);
       saveSearchCache(searchText, services, mapped, coords, usedBounds, scale, usedRadius);
@@ -667,6 +693,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
       // nothing."
       console.error('Error loading locations:', error);
       setLocations([]);
+      setAutoExpandNotice(null);
     } finally {
       setLoading(false);
     }
@@ -760,7 +787,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
     const boundary = await fetchStateBoundary(stateCode);
     if (!boundary) return null;
     const bounds = computeBoundsFromGeoJSON(boundary);
-    const coords = { lat: (bounds.south + bounds.north) / 2, lng: (bounds.west + bounds.east) / 2 };
+    const coords = computeCenterFromBounds(bounds);
     return { stateCode, bounds, coords, boundary };
   };
 
@@ -925,6 +952,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
     // loadLocations's callers below, none of which clear locations first).
     setLocations([]);
     setLoading(true);
+    setAutoExpandNotice(null);
 
     // Cleared immediately (not just left to be overwritten once the fetch
     // below resolves) so a stale outline from the previous search doesn't
@@ -1176,6 +1204,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
         // arrive.
         setLocations([]);
         setLoading(true);
+        setAutoExpandNotice(null);
 
         try {
           const response = await fetch(
@@ -1212,7 +1241,19 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
 
   const locationsWithDistance = locations.map((loc) => {
     let distance: number | null = null;
-    if (userCoords && loc.latitude && loc.longitude) {
+    // "Distance from userCoords" means "distance from the searched point"
+    // everywhere except state scale, where userCoords is just a bounding-
+    // box centroid/approximation, not a real point someone searched from
+    // -- already not used for filtering/sorting a state search (see
+    // filteredLocations below) for the same reason, and showing a raw
+    // number here is actively misleading, not just unhelpful: confirmed
+    // live that Hawaii's official state boundary includes the remote
+    // Northwestern Hawaiian Islands, pulling that centroid far from the
+    // populated islands, and Alaska's antimeridian-crossing shape can
+    // do the same. Suppressing it here (instead of only at each display
+    // site) is the single place that covers every card/popup/list that
+    // shows a location's distance.
+    if (userCoords && loc.latitude && loc.longitude && searchRegionScale !== 'state') {
       distance = calculateDistance(userCoords.lat, userCoords.lng, loc.latitude, loc.longitude);
     }
     return { ...loc, distance };
@@ -1495,6 +1536,16 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
                       <span className="hidden sm:inline">Grid</span>
                     </button>
                   </div>
+                </div>
+              )}
+
+              {hasSubmittedSearch && autoExpandNotice && !(loading && filteredLocations.length === 0) && (
+                // amber-800 on amber-50 measures 6.84:1 (clears AA) -- a
+                // noticeably different tone from the neutral results
+                // header above it, read as "heads up," not an error.
+                <div className="flex items-start gap-2 px-4 py-2.5 border-b border-amber-200 bg-amber-50 text-sm text-amber-800 animate-fade-in-up">
+                  <HelpCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                  <p>{autoExpandNotice}</p>
                 </div>
               )}
 
