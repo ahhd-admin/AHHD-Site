@@ -266,9 +266,16 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   );
 
   const handleSelectSuggestion = async (placeId: string, description: string) => {
+    // Fills the field and quietly geocodes/caches coordinates for later --
+    // does NOT submit the search. Picking a suggestion used to jump
+    // straight to results, which meant there was no chance to pick Type of
+    // Care first; this makes it behave exactly like typing does, so there
+    // is one consistent rule regardless of how the location got there: an
+    // explicit Search click is what commits it. handleSearch already skips
+    // re-geocoding when userCoords is set, so this isn't a wasted call --
+    // it's just done ahead of time instead of at submit.
     setLocation(description);
     setShowSuggestions(false);
-    setHasSubmittedSearch(true);
 
     if (placesLibrary) {
       const geocoder = new google.maps.Geocoder();
@@ -296,8 +303,6 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
                 }
               : null
           );
-
-          loadLocations(description, selectedServices);
         }
       });
     }
@@ -471,17 +476,20 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             <div className="absolute inset-0 bg-white/60" aria-hidden="true" />
           )}
 
-          {/* A fixed-size floating card, both before and after search --
-              only the position changes (centered -> anchored to the upper
-              left). Was previously a full-width bar across the top after
-              search, which covered the map's native fullscreen control
-              (Google places it top-right by default); staying a corner
-              card leaves that clear. */}
+          {/* A fixed-size floating card in both states, but not the SAME
+              size -- max-w-2xl reads right anchored in the corner
+              (surrounded by map/pin context), but the same width felt
+              oversized as a big empty box centered on a dimmed map, so the
+              centered pre-search state stays narrower (max-w-md). Was
+              previously a full-width bar across the top after search,
+              which covered the map's native fullscreen control (Google
+              places it top-right by default); staying a corner card
+              leaves that clear. */}
           <div
-            className={`absolute z-20 transition-all duration-300 w-[calc(100%-1.5rem)] max-w-2xl ${
+            className={`absolute z-20 transition-all duration-300 ${
               hasSubmittedSearch
-                ? 'top-3 left-3'
-                : 'top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2'
+                ? 'top-3 left-3 w-[calc(100%-1.5rem)] max-w-2xl'
+                : 'top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[calc(100%-2rem)] max-w-md'
             }`}
           >
             <div className="bg-white rounded-xl shadow-2xl border border-neutral-200 p-3 sm:p-4">
