@@ -524,6 +524,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
               }
             : null;
           setSearchBounds(computeRegionBounds(coords, results[0].types, rawBounds));
+          setDistanceRadius(suggestDefaultRadius(results[0].types));
         }
       });
     }
@@ -544,7 +545,20 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
     types: string[] | undefined,
     rawBounds: { south: number; west: number; north: number; east: number } | null
   ): { south: number; west: number; north: number; east: number } => {
-    if (rawBounds && types?.includes('administrative_area_level_1')) {
+    // Google's own bounds are the real, tight extent for a state OR a
+    // ZIP code -- verified live: geocoding "60640" returns a real bounds
+    // box (~2mi x 2.5mi), not just a point, and it's Google's actual
+    // definition of that ZIP's area rather than an arbitrary fixed
+    // radius. ZIP_RADIUS_DEGREES below is only a fallback for the rare
+    // case a postal_code result has no bounds at all. A city/locality
+    // result's own bounds are typically just the city limits (too
+    // narrow -- see CITY_RADIUS_DEGREES's comment on why that's
+    // deliberately widened instead of used directly), and a street
+    // address's viewport is a tiny "reasonable to display" box around a
+    // single point (verified: ~0.2mi, far too small to be useful) -- so
+    // those two intentionally keep using a fixed expansion instead of
+    // Google's raw bounds.
+    if (rawBounds && (types?.includes('administrative_area_level_1') || types?.includes('postal_code'))) {
       return rawBounds;
     }
 
@@ -560,6 +574,19 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
       west: coords.lng - radius,
       east: coords.lng + radius,
     };
+  };
+
+  // A sensible starting point for the Radius selector, matched to how
+  // specific the search actually is -- explicitly a suggestion the
+  // visitor can change, not a hard constraint (the "Radius" label below
+  // notes this). A ZIP code search landing on the same "Any distance"
+  // default as a state search meant the Radius control did nothing
+  // useful until manually touched.
+  const suggestDefaultRadius = (types: string[] | undefined): number => {
+    if (types?.includes('administrative_area_level_1')) return 50;
+    if (types?.includes('postal_code')) return 5;
+    if (types?.includes('street_address') || types?.includes('premise') || types?.includes('subpremise')) return 5;
+    return 25; // city/locality and anything else
   };
 
   const handleSearch = async () => {
@@ -612,6 +639,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
           const bounds = computeRegionBounds(coords, result.types, rawBounds);
           setSearchBounds(bounds);
           effectiveBounds = bounds;
+          setDistanceRadius(suggestDefaultRadius(result.types));
         }
       } catch (error) {
         console.error('Geocoding error:', error);
@@ -820,7 +848,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
       {hasSubmittedSearch && (
         <div className="mt-3 animate-fade-in-up">
           <label htmlFor="radius-select" className="block text-xs font-semibold text-navy-800 mb-1">
-            Radius
+            Radius <span className="font-normal text-neutral-600">(suggested -- change anytime)</span>
           </label>
           <select
             id="radius-select"
