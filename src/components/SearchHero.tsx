@@ -45,6 +45,13 @@ const ZIP_RADIUS_DEGREES = 0.12; // ~8mi -- a ZIP code's own scale
 const ADDRESS_RADIUS_DEGREES = 0.06; // ~4mi -- an exact address, tighter still
 const MILES_PER_DEGREE = 69;
 
+// Tried in order (each added on top of the original searched box, not
+// stacked on the previous attempt) when a search comes back with zero
+// results -- see loadLocations. Matches the Radius selector's own step
+// options so "the search auto-widened to N mi" and "pick N mi yourself"
+// land on the same values.
+const RADIUS_EXPANSION_STEPS = [5, 10, 25, 50, 100];
+
 // Expands a bounding box outward by a fixed mile margin on every side --
 // used for a state search's Radius selector: "50 mi" should mean a
 // buffer around the state's actual (irregular) shape, not a circle
@@ -330,138 +337,181 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
 
     setLoading(true);
     try {
-      let query = supabase
-        .from('locations')
-        .select(`
-          *,
-          organization:organizations(organization_id,organization_name,website_url),
-          service_types:location_service_types(
-            service_type:service_types(service_type_id,service_type_name,service_type_slug)
-          ),
-          accreditation_records(accreditation_id,accrediting_body,accreditation_status,is_current_record)
-        `)
-        .eq('listing_status', 'published')
-        .eq('accepts_public_display', true);
+      // Extracted so the same query can be re-run against a wider box
+      // below (auto-expand on zero results) without duplicating all of
+      // this filtering logic.
+      const runQuery = async (queryBounds: typeof bounds) => {
+        let query = supabase
+          .from('locations')
+          .select(`
+            *,
+            organization:organizations(organization_id,organization_name,website_url),
+            service_types:location_service_types(
+              service_type:service_types(service_type_id,service_type_name,service_type_slug)
+            ),
+            accreditation_records(accreditation_id,accrediting_body,accreditation_status,is_current_record)
+          `)
+          .eq('listing_status', 'published')
+          .eq('accepts_public_display', true);
 
-      const trimmed = searchText.trim();
-      const isBroadTerm = trimmed !== '' && BROAD_LOCATION_TERMS.has(trimmed.toLowerCase());
+        const trimmed = searchText.trim();
+        const isBroadTerm = trimmed !== '' && BROAD_LOCATION_TERMS.has(trimmed.toLowerCase());
 
-      if (!isBroadTerm) {
-        if (bounds) {
-          // A real geographic region -- a state's actual extent, or a box
-          // expanded around a geocoded city/zip/address, sized to that
-          // search's own scale (see computeRegionBounds/CITY_RADIUS_
-          // DEGREES/ZIP_RADIUS_DEGREES/ADDRESS_RADIUS_DEGREES below,
-          // where `bounds` gets computed in handleSearch/
-          // handleSelectSuggestion). Querying by the real geography
-          // instead of text-matching the searched name is what lets
-          // "Chicago, IL" include Evanston, Oak Park, Naperville -- real
-          // nearby suburbs that don't happen to contain "Chicago" in
-          // their name -- instead of only the literal city-name match.
-          query = query
-            .gte('latitude', bounds.south)
-            .lte('latitude', bounds.north)
-            .gte('longitude', bounds.west)
-            .lte('longitude', bounds.east);
-        } else if (coords) {
-          // A point with no defined region (GPS "My Location", or a
-          // geocode result with no bounds at all) -- the city-scale box,
-          // centered on the point instead of a search-provided region.
-          query = query
-            .gte('latitude', coords.lat - CITY_RADIUS_DEGREES)
-            .lte('latitude', coords.lat + CITY_RADIUS_DEGREES)
-            .gte('longitude', coords.lng - CITY_RADIUS_DEGREES)
-            .lte('longitude', coords.lng + CITY_RADIUS_DEGREES);
-        } else if (trimmed) {
-          // Fallback for when geocoding hasn't resolved (or failed) --
-          // the original text-based city/state/zip matching. Google
-          // Places descriptions (and plenty of manually-typed searches)
-          // are comma-separated -- "Anchorage, AK, USA", "Alaska, USA",
-          // "99501, USA", "123 Main St, Anchorage, AK 99501, USA".
-          // Splitting on commas and matching each part against
-          // city/state/zip (instead of the whole string as one
-          // substring) means any of those forms works, not just a bare
-          // city name. A trailing country part is dropped so it can't
-          // suppress otherwise-valid matches.
-          const parts = trimmed
-            .split(',')
-            .map((p) => p.trim())
-            .filter((p) => p && !BROAD_LOCATION_TERMS.has(p.toLowerCase()));
+        if (!isBroadTerm) {
+          if (queryBounds) {
+            // A real geographic region -- a state's actual extent, or a box
+            // expanded around a geocoded city/zip/address, sized to that
+            // search's own scale (see computeRegionBounds/CITY_RADIUS_
+            // DEGREES/ZIP_RADIUS_DEGREES/ADDRESS_RADIUS_DEGREES below,
+            // where `bounds` gets computed in handleSearch/
+            // handleSelectSuggestion). Querying by the real geography
+            // instead of text-matching the searched name is what lets
+            // "Chicago, IL" include Evanston, Oak Park, Naperville -- real
+            // nearby suburbs that don't happen to contain "Chicago" in
+            // their name -- instead of only the literal city-name match.
+            query = query
+              .gte('latitude', queryBounds.south)
+              .lte('latitude', queryBounds.north)
+              .gte('longitude', queryBounds.west)
+              .lte('longitude', queryBounds.east);
+          } else if (coords) {
+            // A point with no defined region (GPS "My Location", or a
+            // geocode result with no bounds at all) -- the city-scale box,
+            // centered on the point instead of a search-provided region.
+            query = query
+              .gte('latitude', coords.lat - CITY_RADIUS_DEGREES)
+              .lte('latitude', coords.lat + CITY_RADIUS_DEGREES)
+              .gte('longitude', coords.lng - CITY_RADIUS_DEGREES)
+              .lte('longitude', coords.lng + CITY_RADIUS_DEGREES);
+          } else if (trimmed) {
+            // Fallback for when geocoding hasn't resolved (or failed) --
+            // the original text-based city/state/zip matching. Google
+            // Places descriptions (and plenty of manually-typed searches)
+            // are comma-separated -- "Anchorage, AK, USA", "Alaska, USA",
+            // "99501, USA", "123 Main St, Anchorage, AK 99501, USA".
+            // Splitting on commas and matching each part against
+            // city/state/zip (instead of the whole string as one
+            // substring) means any of those forms works, not just a bare
+            // city name. A trailing country part is dropped so it can't
+            // suppress otherwise-valid matches.
+            const parts = trimmed
+              .split(',')
+              .map((p) => p.trim())
+              .filter((p) => p && !BROAD_LOCATION_TERMS.has(p.toLowerCase()));
 
-          // Recognized state-code parts and everything else are collected
-          // separately and applied as two independent .or() calls rather
-          // than one combined list -- supabase-js's .or() appends a
-          // separate `or=` query param each time it's called (confirmed
-          // by reading postgrest-js's source), and PostgREST ANDs
-          // separate top-level params together (confirmed live against
-          // Supabase). That's what makes "Portland, ME" require BOTH a
-          // Maine state match AND a Portland city/zip match, instead of
-          // every Portland nationwide unioned with every Maine location.
-          const stateOrParts: string[] = [];
-          const otherOrParts: string[] = [];
-          for (const rawPart of parts.length > 0 ? parts : [trimmed]) {
-            const part = rawPart.replace(/[%]/g, '');
-            if (!part) continue;
+            // Recognized state-code parts and everything else are collected
+            // separately and applied as two independent .or() calls rather
+            // than one combined list -- supabase-js's .or() appends a
+            // separate `or=` query param each time it's called (confirmed
+            // by reading postgrest-js's source), and PostgREST ANDs
+            // separate top-level params together (confirmed live against
+            // Supabase). That's what makes "Portland, ME" require BOTH a
+            // Maine state match AND a Portland city/zip match, instead of
+            // every Portland nationwide unioned with every Maine location.
+            const stateOrParts: string[] = [];
+            const otherOrParts: string[] = [];
+            for (const rawPart of parts.length > 0 ? parts : [trimmed]) {
+              const part = rawPart.replace(/[%]/g, '');
+              if (!part) continue;
 
-            // The `state` column only ever stores 2-letter codes ("AK"),
-            // so a typed full name ("Alaska") has to be translated first
-            // or it can never match. resolveStateCode also accepts an
-            // already-valid code.
-            const stateCode = resolveStateCode(part);
-            if (stateCode) {
-              // A part that resolves to a real state code is almost
-              // certainly the state field of a structured address, not a
-              // city/zip fragment -- also ILIKE-matching it against
-              // city/postal_code as a generic 2-letter substring produces
-              // a flood of false positives (e.g. "ME" matches any city
-              // containing "me": Fremont, Sacramento, Yakima,
-              // Somerville...). Only the state match applies here.
-              stateOrParts.push(`state.ilike.%${stateCode}%`);
-            } else {
-              otherOrParts.push(`city.ilike.%${part}%`);
-              otherOrParts.push(`postal_code.ilike.%${part}%`);
-              otherOrParts.push(`state.ilike.%${part}%`);
+              // The `state` column only ever stores 2-letter codes ("AK"),
+              // so a typed full name ("Alaska") has to be translated first
+              // or it can never match. resolveStateCode also accepts an
+              // already-valid code.
+              const stateCode = resolveStateCode(part);
+              if (stateCode) {
+                // A part that resolves to a real state code is almost
+                // certainly the state field of a structured address, not a
+                // city/zip fragment -- also ILIKE-matching it against
+                // city/postal_code as a generic 2-letter substring produces
+                // a flood of false positives (e.g. "ME" matches any city
+                // containing "me": Fremont, Sacramento, Yakima,
+                // Somerville...). Only the state match applies here.
+                stateOrParts.push(`state.ilike.%${stateCode}%`);
+              } else {
+                otherOrParts.push(`city.ilike.%${part}%`);
+                otherOrParts.push(`postal_code.ilike.%${part}%`);
+                otherOrParts.push(`state.ilike.%${part}%`);
+              }
+            }
+
+            if (stateOrParts.length > 0) {
+              query = query.or(stateOrParts.join(','));
+            }
+            if (otherOrParts.length > 0) {
+              query = query.or(otherOrParts.join(','));
             }
           }
+        }
 
-          if (stateOrParts.length > 0) {
-            query = query.or(stateOrParts.join(','));
+        if (services.length > 0) {
+          // Filtering through a nested embed requires an inner join on both
+          // hops, referenced by table name (not the select alias) in the
+          // filter path -- verified directly against the live schema.
+          query = query
+            .select(`
+              *,
+              organization:organizations(organization_id,organization_name,website_url),
+              service_types:location_service_types!inner(
+                service_type:service_types!inner(service_type_id,service_type_name,service_type_slug)
+              ),
+              accreditation_records(accreditation_id,accrediting_body,accreditation_status,is_current_record)
+            `)
+            .in('location_service_types.service_types.service_type_slug', services);
+        }
+
+        const { data, error } = await query.limit(RESULTS_LIMIT);
+        if (error) throw error;
+
+        return (
+          data?.map((loc: any) => ({
+            ...loc,
+            service_types: loc.service_types?.map((st: any) => st.service_type).filter(Boolean) || []
+          })) || []
+        );
+      };
+
+      let mapped = await runQuery(bounds);
+
+      if (import.meta.env.DEV) {
+        console.log('[loadLocations] initial query', { searchText, services, coords, bounds, resultCount: mapped.length });
+      }
+
+      // Auto-expand: a bounds-based search (not the rare text-only
+      // fallback, which has no defined box to widen) that comes back with
+      // literally nothing gets progressively wider retries instead of
+      // leaving a blank map -- most useful for a ZIP/address search,
+      // whose starting box is only a few miles across and can genuinely
+      // have zero accredited providers in it even though real results
+      // exist nearby. Whichever step actually finds something also
+      // becomes the new Radius selector value, so the UI honestly
+      // reflects what's actually being shown rather than a silent
+      // widening.
+      if (mapped.length === 0 && coords && bounds) {
+        for (const step of RADIUS_EXPANSION_STEPS) {
+          const wider = expandBoundsByMiles(bounds, step);
+          const retryResults = await runQuery(wider);
+          if (import.meta.env.DEV) {
+            console.log('[loadLocations] expansion retry', { step, wider, resultCount: retryResults.length });
           }
-          if (otherOrParts.length > 0) {
-            query = query.or(otherOrParts.join(','));
+          if (retryResults.length > 0) {
+            mapped = retryResults;
+            setDistanceRadius(step);
+            break;
           }
         }
       }
 
-      if (services.length > 0) {
-        // Filtering through a nested embed requires an inner join on both
-        // hops, referenced by table name (not the select alias) in the
-        // filter path -- verified directly against the live schema.
-        query = query
-          .select(`
-            *,
-            organization:organizations(organization_id,organization_name,website_url),
-            service_types:location_service_types!inner(
-              service_type:service_types!inner(service_type_id,service_type_name,service_type_slug)
-            ),
-            accreditation_records(accreditation_id,accrediting_body,accreditation_status,is_current_record)
-          `)
-          .in('location_service_types.service_types.service_type_slug', services);
-      }
-
-      const { data, error } = await query.limit(RESULTS_LIMIT);
-
-      if (error) throw error;
-
-      const mapped = data?.map((loc: any) => ({
-        ...loc,
-        service_types: loc.service_types?.map((st: any) => st.service_type).filter(Boolean) || []
-      })) || [];
-
       setLocations(mapped);
       saveSearchCache(searchText, services, mapped, coords, bounds);
     } catch (error) {
+      // Previously left `locations` at whatever it already held (stale
+      // results from a prior search, or the initial empty array) with no
+      // visible indication anything went wrong -- a query error (e.g. a
+      // malformed filter) looked identical to "search legitimately found
+      // nothing."
       console.error('Error loading locations:', error);
+      setLocations([]);
     } finally {
       setLoading(false);
     }
@@ -706,10 +756,42 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
           const suggestedRadius = suggestDefaultRadius(scale);
           setDistanceRadius(suggestedRadius);
           effectiveRadius = suggestedRadius;
+
+          // Keeps lastGeocodeScaleRef in sync with whichever geocode path
+          // actually ran -- handleSelectSuggestion already writes this for
+          // its own geocode, but this inline fallback (typed text, Enter,
+          // no suggestion picked) never did, so a later call that reads the
+          // ref (see the top of this function) could see a stale scale left
+          // over from a previous, different search.
+          lastGeocodeScaleRef.current = scale;
+
+          if (import.meta.env.DEV) {
+            console.log('[handleSearch] geocode OK', { location, scale, coords, bounds, suggestedRadius });
+          }
+        } else {
+          // A non-OK status (REQUEST_DENIED, ZERO_RESULTS, OVER_QUERY_LIMIT,
+          // INVALID_REQUEST...) previously fell through completely silently
+          // here -- effectiveCoords/effectiveDisplayBounds/effectiveScale
+          // were left at whatever they already were (null coords/bounds,
+          // since this branch only runs when userCoords is already null;
+          // but effectiveScale could still be a *stale* value left over in
+          // lastGeocodeScaleRef from an earlier, different search). Logging
+          // this is the only way to tell "geocode legitimately found
+          // nothing" apart from "the query silently fell back to
+          // ILIKE-text-matching with a leftover scale from last time."
+          console.error('Geocoding failed for search:', location, data.status, data.error_message);
+          effectiveScale = undefined;
+          lastGeocodeScaleRef.current = undefined;
         }
       } catch (error) {
         console.error('Geocoding error:', error);
+        effectiveScale = undefined;
+        lastGeocodeScaleRef.current = undefined;
       }
+    }
+
+    if (import.meta.env.DEV) {
+      console.log('[handleSearch] resolved', { location, effectiveScale, effectiveCoords, effectiveDisplayBounds, effectiveRadius });
     }
 
     // Only attempted for city/state-level searches -- a ZIP code or exact
