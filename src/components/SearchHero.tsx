@@ -472,16 +472,17 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             <div className="absolute inset-0 bg-white/60" aria-hidden="true" />
           )}
 
-          {/* Same horizontal span (inset-x-3, full container width) in both
-              states -- only the vertical position and inner padding change
-              between the centered pre-search prompt and the pinned
-              post-search bar, so the box doesn't visually resize/reflow
-              during the transition, just slide. Also gives the input row
-              real room instead of being squeezed into a narrow centered
-              card. */}
+          {/* A fixed-size floating card while typing (not full-width --
+              stays a set, centered card so it reads as a compact prompt
+              rather than a form spanning the whole map), which then moves
+              to a full-width bar pinned at the top once a search is
+              submitted -- both the position AND the width change together
+              on that one transition. */}
           <div
-            className={`absolute z-20 inset-x-3 transition-all duration-300 ${
-              hasSubmittedSearch ? 'top-3' : 'top-1/2 -translate-y-1/2'
+            className={`absolute z-20 transition-all duration-300 ${
+              hasSubmittedSearch
+                ? 'top-3 inset-x-3'
+                : 'top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[calc(100%-2rem)] max-w-md'
             }`}
           >
             <div className="bg-white rounded-xl shadow-2xl border border-neutral-200 p-3 sm:p-4">
