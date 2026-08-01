@@ -854,7 +854,12 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
               threw the two columns' top edges out of alignment before. */}
           <div className="flex-1 min-w-0">
             <div className="rounded-2xl overflow-hidden shadow-md border border-neutral-200 bg-white">
-              {hasSubmittedSearch && !loading && (
+              {/* Same reasoning as the map/grid area below -- stays
+                  mounted through a refinement's loading=true window
+                  (previous results are still showing) instead of
+                  flickering out and back in on every Type of Care
+                  change. */}
+              {hasSubmittedSearch && !(loading && filteredLocations.length === 0) && (
                 <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-neutral-200 bg-neutral-50 animate-fade-in-up">
                   <p className="text-sm text-neutral-600">
                     {filteredLocations.length} accredited {filteredLocations.length === 1 ? 'provider' : 'providers'}
@@ -891,7 +896,17 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
                 </div>
               )}
 
-              {loading ? (
+              {/* Only shows the spinner in place of the map/grid when
+                  there's genuinely nothing to show yet (the first
+                  search). A refinement (Type of Care, etc.) also sets
+                  loading=true while it refetches, but `locations` still
+                  holds the previous results until the new ones land --
+                  unmounting MapSearch in that window (the old
+                  `loading ? spinner : ...` check did, unconditionally)
+                  wiped its internal refs, which is what was resetting
+                  the map's camera/zoom back to a fresh fit on every
+                  refinement, discarding any manual pan/zoom. */}
+              {loading && filteredLocations.length === 0 ? (
                 <div className="h-[500px] md:h-[600px] flex items-center justify-center bg-neutral-50">
                   <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-primary-200 border-t-primary-600"></div>
                 </div>
