@@ -43,6 +43,32 @@ const RESULTS_LIMIT = 8000;
 const CITY_RADIUS_DEGREES = 0.75; // ~50mi -- city/locality searches
 const ZIP_RADIUS_DEGREES = 0.12; // ~8mi -- a ZIP code's own scale
 const ADDRESS_RADIUS_DEGREES = 0.06; // ~4mi -- an exact address, tighter still
+const MILES_PER_DEGREE = 69;
+
+// Expands a bounding box outward by a fixed mile margin on every side --
+// used for a state search's Radius selector: "50 mi" should mean a
+// buffer around the state's actual (irregular) shape, not a circle
+// centered on its centroid. Centroid-distance is a poor proxy for a
+// large or elongated state -- a location near Illinois's northern tip
+// can be 200+ miles from the state's centroid even though it's well
+// inside the state, so filtering that way would wrongly exclude
+// genuinely-in-state results. This isn't a true polygon buffer (that
+// would need to offset the state's actual irregular outline, not just
+// its bounding rectangle), but expanding the rectangle is a reasonable
+// approximation and the rectangle is already what's actually queried.
+function expandBoundsByMiles(
+  bounds: { south: number; west: number; north: number; east: number },
+  miles: number
+): { south: number; west: number; north: number; east: number } {
+  if (miles >= 999999) return bounds; // "Any distance" -- the state's own extent, no added margin
+  const degrees = miles / MILES_PER_DEGREE;
+  return {
+    south: bounds.south - degrees,
+    north: bounds.north + degrees,
+    west: bounds.west - degrees,
+    east: bounds.east + degrees,
+  };
+}
 
 // See src/lib/scrollRestoration.ts for the full explanation -- the
 // browser's own scroll restoration fires before this page's async
@@ -119,6 +145,13 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   // doesn't cover -- most ZIP codes, or if the lookup fails for any
   // reason at all.
   const [boundaryPolygon, setBoundaryPolygon] = useState<BoundaryGeoJSON | null>(null);
+  // How specific the current search is -- drives whether the Radius
+  // circle draws at all (only for zip/address; a wide circle over an
+  // entire city/state just competes visually with its outline and adds
+  // nothing a Radius selector user actually wants there), and whether
+  // the Radius selector means "buffer around the whole region" (state)
+  // vs. "distance from the searched point" (everything else).
+  const [searchRegionScale, setSearchRegionScale] = useState<'state' | 'city' | 'zip' | 'address' | null>(null);
   const [gettingLocation, setGettingLocation] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [suggestions, setSuggestions] = useState<google.maps.places.AutocompletePrediction[]>([]);
@@ -128,7 +161,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   // (handleSelectSuggestion's own geocode, or handleSearch's) -- read at
   // submit time to decide whether a real boundary trace should even be
   // attempted (see shouldTraceBoundary below).
-  const lastGeocodeTypesRef = useRef<string[] | undefined>(undefined);
+  const lastGeocodeScaleRef = useRef<'state' | 'city' | 'zip' | 'address' | undefined>(undefined);
 
   // Restores a search coming in from the URL (e.g. hitting the browser
   // back button after clicking into a provider page). Checks the results
@@ -210,7 +243,14 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
       // (unlike handleSearch) -- this effect only ever fires on a later
       // tick after any geocode from the original submit has already
       // settled, not synchronously alongside setUserCoords/setSearchBounds.
-      loadLocations(location, selectedServices, userCoords, searchBounds);
+      // Re-expand for a state search -- see the matching comment in
+      // handleSearch for why a state uses a mile buffer around its shape
+      // instead of centroid-distance filtering.
+      const queryBounds =
+        searchRegionScale === 'state' && searchBounds
+          ? expandBoundsByMiles(searchBounds, distanceRadius)
+          : searchBounds;
+      loadLocations(location, selectedServices, userCoords, queryBounds);
     }, 400);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -528,51 +568,49 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
                 east: box.getNorthEast().lng(),
               }
             : null;
-          setSearchBounds(computeRegionBounds(coords, results[0].types, rawBounds));
-          setDistanceRadius(suggestDefaultRadius(results[0].types));
-          lastGeocodeTypesRef.current = results[0].types;
+          const scale = classifyRegionScale(results[0].types);
+          setSearchBounds(computeRegionBounds(coords, scale, rawBounds));
+          setDistanceRadius(suggestDefaultRadius(scale));
+          setSearchRegionScale(scale);
+          lastGeocodeScaleRef.current = scale;
         }
       });
     }
   };
 
+  // Single source of truth for "how specific is this search," everything
+  // below derives from this instead of each repeating its own types
+  // checks.
+  const classifyRegionScale = (types: string[] | undefined): 'state' | 'city' | 'zip' | 'address' => {
+    if (types?.includes('administrative_area_level_1')) return 'state';
+    if (types?.includes('postal_code')) return 'zip';
+    if (types?.includes('street_address') || types?.includes('premise') || types?.includes('subpremise')) return 'address';
+    return 'city';
+  };
+
   // Decides how much geography a geocoded result should actually cover.
-  // A state gets its own real extent (Google returns that directly).
-  // Everything else gets a box sized to how specific the search actually
-  // is -- a ZIP code or exact address is a much smaller, more precise
-  // area than a city, and using the wide city-scale box for a single ZIP
-  // search meant it showed almost the entire metro area (spilling into
-  // neighboring states for a Chicago ZIP) instead of scoping to that ZIP
-  // and its immediate surroundings. Always returns a real region, never
-  // null, since even an exact-address search should still show what's
-  // nearby.
+  // A state or ZIP gets Google's own real extent -- verified live:
+  // geocoding "60640" returns a real bounds box (~2mi x 2.5mi), Google's
+  // actual definition of that ZIP's area, not an arbitrary radius.
+  // ZIP_RADIUS_DEGREES is only a fallback for the rare case a postal_code
+  // result has no bounds at all. A city/locality result's own bounds are
+  // typically just the city limits (too narrow -- CITY_RADIUS_DEGREES
+  // deliberately widens past that to include real nearby suburbs), and a
+  // street address's viewport is a tiny "reasonable to display" box
+  // around a single point (verified: ~0.2mi, far too small to be
+  // useful) -- so those two intentionally use a fixed expansion instead
+  // of Google's raw bounds. Always returns a real region, never null,
+  // since even an exact-address search should still show what's nearby.
   const computeRegionBounds = (
     coords: { lat: number; lng: number },
-    types: string[] | undefined,
+    scale: 'state' | 'city' | 'zip' | 'address',
     rawBounds: { south: number; west: number; north: number; east: number } | null
   ): { south: number; west: number; north: number; east: number } => {
-    // Google's own bounds are the real, tight extent for a state OR a
-    // ZIP code -- verified live: geocoding "60640" returns a real bounds
-    // box (~2mi x 2.5mi), not just a point, and it's Google's actual
-    // definition of that ZIP's area rather than an arbitrary fixed
-    // radius. ZIP_RADIUS_DEGREES below is only a fallback for the rare
-    // case a postal_code result has no bounds at all. A city/locality
-    // result's own bounds are typically just the city limits (too
-    // narrow -- see CITY_RADIUS_DEGREES's comment on why that's
-    // deliberately widened instead of used directly), and a street
-    // address's viewport is a tiny "reasonable to display" box around a
-    // single point (verified: ~0.2mi, far too small to be useful) -- so
-    // those two intentionally keep using a fixed expansion instead of
-    // Google's raw bounds.
-    if (rawBounds && (types?.includes('administrative_area_level_1') || types?.includes('postal_code'))) {
+    if (rawBounds && (scale === 'state' || scale === 'zip')) {
       return rawBounds;
     }
 
-    const radius = types?.includes('postal_code')
-      ? ZIP_RADIUS_DEGREES
-      : types?.includes('street_address') || types?.includes('premise') || types?.includes('subpremise')
-        ? ADDRESS_RADIUS_DEGREES
-        : CITY_RADIUS_DEGREES;
+    const radius = scale === 'zip' ? ZIP_RADIUS_DEGREES : scale === 'address' ? ADDRESS_RADIUS_DEGREES : CITY_RADIUS_DEGREES;
 
     return {
       south: coords.lat - radius,
@@ -587,12 +625,13 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   // visitor can change, not a hard constraint (the "Radius" label below
   // notes this). A ZIP code search landing on the same "Any distance"
   // default as a state search meant the Radius control did nothing
-  // useful until manually touched.
-  const suggestDefaultRadius = (types: string[] | undefined): number => {
-    if (types?.includes('administrative_area_level_1')) return 50;
-    if (types?.includes('postal_code')) return 5;
-    if (types?.includes('street_address') || types?.includes('premise') || types?.includes('subpremise')) return 5;
-    return 25; // city/locality and anything else
+  // useful until manually touched. For a state, this is the mile buffer
+  // added around the state's own shape (see expandBoundsByMiles), not a
+  // centroid-distance radius.
+  const suggestDefaultRadius = (scale: 'state' | 'city' | 'zip' | 'address'): number => {
+    if (scale === 'state') return 50;
+    if (scale === 'zip' || scale === 'address') return 5;
+    return 25; // city
   };
 
   // A real traced boundary is only worth attempting for a city or state --
@@ -603,11 +642,8 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   // searched. ZIP/address searches already have an accurate outline from
   // Google's own bounds (see computeRegionBounds), so skip the
   // mismatched trace entirely rather than show it.
-  const shouldTraceBoundary = (types: string[] | undefined): boolean =>
-    !types?.includes('postal_code') &&
-    !types?.includes('street_address') &&
-    !types?.includes('premise') &&
-    !types?.includes('subpremise');
+  const shouldTraceBoundary = (scale: 'state' | 'city' | 'zip' | 'address'): boolean =>
+    scale === 'state' || scale === 'city';
 
   const handleSearch = async () => {
     setShowSuggestions(false);
@@ -625,12 +661,14 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
     // the time loadLocations runs in this same synchronous flow, so
     // reading state here would cache the previous search's coordinates.
     let effectiveCoords = userCoords;
-    let effectiveBounds = searchBounds;
+    // The RAW region (unexpanded) -- what the outline/map-fit displays.
+    let effectiveDisplayBounds = searchBounds;
     // Whichever geocode actually ran resolves this -- handleSelectSuggestion's
     // own geocode if a suggestion was picked (userCoords already set, so
     // this function's own geocode below is skipped entirely), or the
     // geocode just below otherwise.
-    let effectiveTypes = lastGeocodeTypesRef.current;
+    let effectiveScale = lastGeocodeScaleRef.current;
+    let effectiveRadius = distanceRadius;
 
     if (!userCoords) {
       try {
@@ -647,8 +685,10 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
           };
           setUserCoords(coords);
           effectiveCoords = coords;
-          effectiveTypes = result.types;
-          lastGeocodeTypesRef.current = result.types;
+
+          const scale = classifyRegionScale(result.types);
+          effectiveScale = scale;
+          setSearchRegionScale(scale);
 
           const box = result.geometry.bounds || result.geometry.viewport;
           const rawBounds = box
@@ -659,10 +699,13 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
                 east: box.northeast.lng,
               }
             : null;
-          const bounds = computeRegionBounds(coords, result.types, rawBounds);
+          const bounds = computeRegionBounds(coords, scale, rawBounds);
           setSearchBounds(bounds);
-          effectiveBounds = bounds;
-          setDistanceRadius(suggestDefaultRadius(result.types));
+          effectiveDisplayBounds = bounds;
+
+          const suggestedRadius = suggestDefaultRadius(scale);
+          setDistanceRadius(suggestedRadius);
+          effectiveRadius = suggestedRadius;
         }
       } catch (error) {
         console.error('Geocoding error:', error);
@@ -679,11 +722,37 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
     // searched, tracing the city while the map zoomed to the ZIP. Fired
     // without awaiting either way -- best-effort visual extra, never
     // something the actual search should wait on.
-    if (shouldTraceBoundary(effectiveTypes)) {
+    if (effectiveScale && shouldTraceBoundary(effectiveScale)) {
       fetchSearchBoundary(location).then(setBoundaryPolygon);
     }
 
-    loadLocations(location, ensureServicesSelected(), effectiveCoords, effectiveBounds);
+    // A state search's query bounds get expanded by the current Radius
+    // (miles buffered around the state's actual shape -- see
+    // expandBoundsByMiles) rather than filtered by centroid-distance
+    // client-side the way city/zip/address searches are (see
+    // filteredLocations below): a state is too large/irregularly shaped
+    // for "distance from its centroid" to mean anything sensible --
+    // Illinois's northern tip can be 200+ miles from the state's own
+    // centroid despite being well inside the state.
+    const queryBounds =
+      effectiveScale === 'state' && effectiveDisplayBounds
+        ? expandBoundsByMiles(effectiveDisplayBounds, effectiveRadius)
+        : effectiveDisplayBounds;
+
+    loadLocations(location, ensureServicesSelected(), effectiveCoords, queryBounds);
+  };
+
+  // For a city/zip/address search, changing the Radius is purely a
+  // client-side filter (see filteredLocations below) -- no need to
+  // re-query, the candidate pool already covers it. A state search is
+  // different: the Radius is a mile buffer added to the query's bounding
+  // box itself (see expandBoundsByMiles), so widening/narrowing it
+  // genuinely changes what should be fetched, and needs a real re-query.
+  const handleRadiusChange = (newRadius: number) => {
+    setDistanceRadius(newRadius);
+    if (hasSubmittedSearch && searchRegionScale === 'state' && searchBounds) {
+      loadLocations(location, selectedServices, userCoords, expandBoundsByMiles(searchBounds, newRadius));
+    }
   };
 
   const handleGeolocation = () => {
@@ -702,8 +771,12 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
         setUserCoords(coords);
         // GPS position is a real point, not a region -- clear any bounds
         // left over from a previous state/city search so the map zooms in
-        // close on "near me" instead of re-fitting a stale region.
+        // close on "near me" instead of re-fitting a stale region. Scale
+        // is set to 'address' (not a real geocode classification, just
+        // reusing its precise-point treatment) so the Radius circle still
+        // draws for "My Location" the way it always has.
         setSearchBounds(null);
+        setSearchRegionScale('address');
         setHasSubmittedSearch(true);
         setSearchGeneration((n) => n + 1);
 
@@ -753,6 +826,14 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   // this just applies the distance radius (which needs the client-computed
   // distance above) and sorts.
   const filteredLocations = locationsWithDistance.filter((loc) => {
+    // A state search's "distance from the searched point" is meaningless
+    // (see the matching comment in handleSearch/expandBoundsByMiles) --
+    // centroid-distance would wrongly exclude genuinely in-state results
+    // far from the centroid. The query's bounding box is already
+    // correctly expanded by the Radius for this case, so there's nothing
+    // further to filter here.
+    if (searchRegionScale === 'state') return true;
+
     if (distanceRadius < 999999 && loc.distance !== null) {
       if (loc.distance > distanceRadius) {
         return false;
@@ -761,6 +842,10 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
 
     return true;
   }).sort((a, b) => {
+    // Same reasoning -- distance-from-centroid isn't a meaningful order
+    // for a state search, so leave the query's own order alone.
+    if (searchRegionScale === 'state') return 0;
+
     // display_order was never a real column on locations (it belongs to
     // service_types) -- this always fell through to distance sorting in
     // practice. If per-location manual ordering is wanted later, it needs
@@ -812,6 +897,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
               setUserCoords(null);
               setSearchBounds(null);
               setBoundaryPolygon(null);
+              setSearchRegionScale(null);
               setShowSuggestions(true);
               if (!value.trim()) {
                 // Cleared back to empty -- fully reset to the idle prompt
@@ -891,7 +977,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
           <select
             id="radius-select"
             value={distanceRadius}
-            onChange={(e) => setDistanceRadius(Number(e.target.value))}
+            onChange={(e) => handleRadiusChange(Number(e.target.value))}
             className="w-full px-3 h-[38px] text-sm border-2 border-neutral-300 rounded-lg focus:outline-none focus:ring-4 focus:ring-primary-200 focus:border-primary-500 transition-all bg-white text-neutral-800 font-medium"
           >
             <option value={999999}>Any distance</option>
@@ -1016,7 +1102,20 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
                     searchBounds={hasSubmittedSearch ? searchBounds : null}
                     boundaryPolygon={hasSubmittedSearch ? boundaryPolygon : null}
                     searchGeneration={searchGeneration}
-                    radiusMiles={distanceRadius}
+                    // The Radius circle only draws for zip/address
+                    // searches. For a city, a wide circle over the whole
+                    // city just competes visually with its outline and
+                    // adds nothing useful; for a state, the Radius isn't
+                    // even a centroid-distance concept anymore (see
+                    // expandBoundsByMiles/filteredLocations above) --
+                    // drawing a circle for it would actively misrepresent
+                    // what's actually being searched. MapSearch's circle
+                    // draws whenever radiusMiles < 999999, so passing
+                    // "Any distance" here suppresses it without needing a
+                    // separate prop; the real distanceRadius value is
+                    // still what's shown in the Radius selector and used
+                    // for actual filtering/querying above.
+                    radiusMiles={searchRegionScale === 'zip' || searchRegionScale === 'address' ? distanceRadius : 999999}
                   />
                 </div>
               )}
