@@ -432,7 +432,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   });
 
   return (
-    <section className="bg-gradient-to-br from-primary-50 via-white to-navy-50 py-6 md:py-10">
+    <section className="bg-neutral-50 py-6 md:py-10">
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
         <div className="text-center mb-4 md:mb-6">
           <h1 className="text-3xl md:text-4xl font-heading font-bold text-navy-800 mb-2">
@@ -450,7 +450,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             with a prompt (nothing to show yet); once there's a location,
             it collapses to a slim bar pinned at the top so re-searching
             stays one click away without taking up permanent space. */}
-        <div className="relative rounded-2xl overflow-hidden shadow-xl border border-neutral-200 bg-white">
+        <div className="relative rounded-2xl overflow-hidden shadow-md border border-neutral-200 bg-white">
           <div className={!hasSubmittedSearch ? 'pointer-events-none' : ''}>
             {loading ? (
               <div className="h-[500px] md:h-[600px] flex items-center justify-center bg-neutral-50">
@@ -583,82 +583,72 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
                 </div>
               </div>
 
-              {/* Type of Care is pickable before the first search too, not
-                  just to refine an already-populated map -- it's part of
-                  what's being searched for, not an afterthought. */}
-              {!hasSubmittedSearch && (
-                <div className="mt-2">
-                  <p className="text-xs font-semibold text-navy-800 mb-1">Type of Care</p>
-                  {renderCareTypeCheckboxes(true)}
+              {/* Type of Care lives here unconditionally (both before and
+                  after search) -- it's part of what's being searched for,
+                  not a refinement to bolt on afterward. Radius and the
+                  map/list toggle join it once there's something to refine.
+                  All of this used to be split: this card up top, then a
+                  separate row below the map -- consolidated into one place
+                  instead. */}
+              <fieldset className="mt-2 border-0 p-0 m-0 min-w-0">
+                <legend className="text-xs font-semibold text-navy-800 mb-1">Type of Care</legend>
+                {renderCareTypeCheckboxes(true)}
+              </fieldset>
+
+              {hasSubmittedSearch && (
+                <div className="mt-2 flex gap-2 items-end">
+                  <div className="flex-1 sm:flex-none sm:w-[130px]">
+                    <label htmlFor="radius-select" className="block text-xs font-semibold text-navy-800 mb-1">
+                      Radius
+                    </label>
+                    <select
+                      id="radius-select"
+                      value={distanceRadius}
+                      onChange={(e) => setDistanceRadius(Number(e.target.value))}
+                      className="w-full px-3 h-[40px] text-sm border-2 border-neutral-300 rounded-lg focus:outline-none focus:ring-4 focus:ring-primary-200 focus:border-primary-500 transition-all bg-white text-neutral-800 font-medium"
+                    >
+                      <option value={999999}>Any distance</option>
+                      <option value={5}>Within 5 mi</option>
+                      <option value={10}>Within 10 mi</option>
+                      <option value={25}>Within 25 mi</option>
+                      <option value={50}>Within 50 mi</option>
+                      <option value={100}>Within 100 mi</option>
+                    </select>
+                  </div>
+
+                  <div className="flex items-center gap-1 bg-neutral-100 rounded-lg p-1 h-[40px]">
+                    <button
+                      onClick={() => setViewMode('map')}
+                      className={`flex items-center justify-center w-8 sm:w-auto sm:gap-1.5 sm:px-3 h-full rounded-md text-sm font-medium transition-all ${
+                        viewMode === 'map'
+                          ? 'bg-white text-navy-800 shadow-sm'
+                          : 'text-neutral-600 hover:text-navy-800'
+                      }`}
+                      aria-label="Map view"
+                      aria-pressed={viewMode === 'map'}
+                    >
+                      <Map className="w-4 h-4" />
+                      <span className="hidden sm:inline">Map</span>
+                    </button>
+                    <button
+                      onClick={() => setViewMode('list')}
+                      className={`flex items-center justify-center w-8 sm:w-auto sm:gap-1.5 sm:px-3 h-full rounded-md text-sm font-medium transition-all ${
+                        viewMode === 'list'
+                          ? 'bg-white text-navy-800 shadow-sm'
+                          : 'text-neutral-600 hover:text-navy-800'
+                      }`}
+                      aria-label="List view"
+                      aria-pressed={viewMode === 'list'}
+                    >
+                      <List className="w-4 h-4" />
+                      <span className="hidden sm:inline">List</span>
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
           </div>
         </div>
-
-        {/* Radius and the map/list toggle only show up once there's
-            something to refine -- but Type of Care lives in the hero card
-            above before that point, since it's part of the search itself. */}
-        {hasSubmittedSearch && (
-          <div className="mt-3 flex flex-col sm:flex-row gap-3 items-start">
-            <fieldset className="flex-1 w-full sm:w-auto border-0 p-0 m-0 min-w-0">
-              <legend className="block text-sm font-semibold text-navy-800 mb-1.5">
-                Type of Care
-              </legend>
-              {renderCareTypeCheckboxes(false)}
-            </fieldset>
-
-            <div className="flex gap-2 items-end w-full sm:w-auto">
-              <div className="flex-1 sm:w-[130px]">
-                <label htmlFor="radius-select" className="block text-sm font-semibold text-navy-800 mb-1.5">
-                  Radius
-                </label>
-                <select
-                  id="radius-select"
-                  value={distanceRadius}
-                  onChange={(e) => setDistanceRadius(Number(e.target.value))}
-                  className="w-full px-3 h-[44px] text-sm border-2 border-neutral-300 rounded-xl focus:outline-none focus:ring-4 focus:ring-primary-200 focus:border-primary-500 transition-all bg-white text-neutral-800 font-medium"
-                >
-                  <option value={999999}>Any distance</option>
-                  <option value={5}>Within 5 mi</option>
-                  <option value={10}>Within 10 mi</option>
-                  <option value={25}>Within 25 mi</option>
-                  <option value={50}>Within 50 mi</option>
-                  <option value={100}>Within 100 mi</option>
-                </select>
-              </div>
-
-              <div className="flex items-center gap-1 bg-neutral-100 rounded-lg p-1 h-[44px]">
-                <button
-                  onClick={() => setViewMode('map')}
-                  className={`flex items-center justify-center w-9 sm:w-auto sm:gap-1.5 sm:px-3 h-full rounded-md text-sm font-medium transition-all ${
-                    viewMode === 'map'
-                      ? 'bg-white text-navy-800 shadow-sm'
-                      : 'text-neutral-600 hover:text-navy-800'
-                  }`}
-                  aria-label="Map view"
-                  aria-pressed={viewMode === 'map'}
-                >
-                  <Map className="w-4 h-4" />
-                  <span className="hidden sm:inline">Map</span>
-                </button>
-                <button
-                  onClick={() => setViewMode('list')}
-                  className={`flex items-center justify-center w-9 sm:w-auto sm:gap-1.5 sm:px-3 h-full rounded-md text-sm font-medium transition-all ${
-                    viewMode === 'list'
-                      ? 'bg-white text-navy-800 shadow-sm'
-                      : 'text-neutral-600 hover:text-navy-800'
-                  }`}
-                  aria-label="List view"
-                  aria-pressed={viewMode === 'list'}
-                >
-                  <List className="w-4 h-4" />
-                  <span className="hidden sm:inline">List</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
 
         {hasSubmittedSearch && filteredLocations.length === 0 && !loading && (
           <div className="mt-6 text-center">
