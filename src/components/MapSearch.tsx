@@ -42,6 +42,7 @@ function MapContent({ locations, userCoords, searchBounds, radiusMiles, hoveredL
   const hasZoomedToBounds = useRef<string>('');
   const hasZoomedToUser = useRef<string>('');
   const radiusCircleRef = useRef<google.maps.Circle | null>(null);
+  const searchRegionRectRef = useRef<google.maps.Rectangle | null>(null);
 
   // Memoized so this is a stable reference across renders that don't
   // actually change the location data -- without this, the marker-sync
@@ -83,6 +84,48 @@ function MapContent({ locations, userCoords, searchBounds, radiusMiles, hoveredL
       }
     };
   }, [userCoords, radiusMiles, map]);
+
+  // Outlines the actual region the search is querying against -- a
+  // state's real extent, or the ~50mi box expanded around a geocoded
+  // city/zip/address (see SEARCH_RADIUS_DEGREES in SearchHero.tsx). A
+  // plain thin outline (no fill) so it reads as a lightweight "here's the
+  // searched area" reference rather than competing visually with the
+  // Radius circle above, which represents a different thing (the
+  // client-side distance filter, when one's actually selected). Google's
+  // Rectangle doesn't support a dashed stroke directly (that needs a
+  // Polyline with icon symbols) -- solid thin stroke is a reasonable
+  // stand-in.
+  useEffect(() => {
+    if (!map) return;
+
+    if (searchRegionRectRef.current) {
+      searchRegionRectRef.current.setMap(null);
+      searchRegionRectRef.current = null;
+    }
+
+    if (searchBounds) {
+      searchRegionRectRef.current = new google.maps.Rectangle({
+        bounds: {
+          north: searchBounds.north,
+          south: searchBounds.south,
+          east: searchBounds.east,
+          west: searchBounds.west,
+        },
+        strokeColor: '#6b7280',
+        strokeOpacity: 0.6,
+        strokeWeight: 1.5,
+        fillOpacity: 0,
+        clickable: false,
+        map,
+      });
+    }
+
+    return () => {
+      if (searchRegionRectRef.current) {
+        searchRegionRectRef.current.setMap(null);
+      }
+    };
+  }, [searchBounds, map]);
 
   useEffect(() => {
     if (!map) return;

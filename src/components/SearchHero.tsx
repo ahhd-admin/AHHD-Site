@@ -23,6 +23,22 @@ const BROAD_LOCATION_TERMS = new Set(['usa', 'us', 'u.s.', 'u.s.a.', 'united sta
 // everything," not an arbitrary small slice of it.
 const RESULTS_LIMIT = 8000;
 
+// Half-width (in degrees) of the geographic box fetched around a
+// geocoded point for anything that isn't a whole state -- a city or zip
+// search used to filter by literal text match on the city name, which
+// meant "Chicago, IL" excluded every real suburb (Evanston, Oak Park,
+// Naperville...) that doesn't happen to contain "Chicago" in its name,
+// while "Chicago Heights" only showed up by the accident of containing
+// that substring. ~0.75 degrees is roughly 50 miles -- generous enough to
+// cover a metro area's real surrounding region. 1 degree of latitude is a
+// near-constant ~69 miles everywhere; longitude varies with latitude
+// (shorter near the poles), but for the contiguous US this still lands
+// in a reasonable 50-65 mile range, which is fine for "show me the
+// surrounding area," not a precision distance tool (the Radius selector,
+// filtered client-side against the real calculated distance, is what
+// gives an exact answer).
+const SEARCH_RADIUS_DEGREES = 0.75;
+
 // See src/lib/scrollRestoration.ts for the full explanation -- the
 // browser's own scroll restoration fires before this page's async
 // results fetch resolves, landing on the wrong position. Overriding it
@@ -228,14 +244,16 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   const loadLocations = async (
     searchText: string,
     services: string[],
-    // Only used to cache alongside the results (see saveSearchCache
-    // below) -- NOT read from userCoords/searchBounds state directly,
-    // since callers that just geocoded call setUserCoords/setSearchBounds
-    // and then this in the same synchronous tick, before those state
-    // updates have actually landed; reading state here would cache the
-    // previous search's (possibly null) coordinates.
-    coordsForCache: { lat: number; lng: number } | null = null,
-    boundsForCache: { south: number; west: number; north: number; east: number } | null = null
+    // Drives the actual geographic query below (not read from
+    // userCoords/searchBounds state directly, since callers that just
+    // geocoded call setUserCoords/setSearchBounds and then this in the
+    // same synchronous tick, before those state updates have actually
+    // landed -- reading state here would query/cache against the
+    // previous search's coordinates) -- and also cached alongside the
+    // results for instant restore on back-navigation (see
+    // saveSearchCache below).
+    coords: { lat: number; lng: number } | null = null,
+    bounds: { south: number; west: number; north: number; east: number } | null = null
   ) => {
     if (services.length === 0) {
       // No care type checked -- show nothing rather than dropping the
@@ -261,67 +279,91 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
         .eq('accepts_public_display', true);
 
       const trimmed = searchText.trim();
-      if (trimmed && !BROAD_LOCATION_TERMS.has(trimmed.toLowerCase())) {
-        // Google Places descriptions (and plenty of manually-typed searches)
-        // are comma-separated -- "Anchorage, AK, USA", "Alaska, USA",
-        // "99501, USA", "123 Main St, Anchorage, AK 99501, USA". Splitting
-        // on commas and matching each part against city/state/zip (instead
-        // of the whole string as one substring) means any of those forms
-        // works, not just a bare city name. A trailing country part is
-        // dropped so it can't suppress otherwise-valid matches.
-        const parts = trimmed
-          .split(',')
-          .map((p) => p.trim())
-          .filter((p) => p && !BROAD_LOCATION_TERMS.has(p.toLowerCase()));
+      const isBroadTerm = trimmed !== '' && BROAD_LOCATION_TERMS.has(trimmed.toLowerCase());
 
-        // Recognized state-code parts and everything else are collected
-        // separately and applied as two independent .or() calls rather
-        // than one combined list -- supabase-js's .or() appends a
-        // separate `or=` query param each time it's called (confirmed by
-        // reading postgrest-js's source), and PostgREST ANDs separate
-        // top-level params together (confirmed live against Supabase).
-        // That's what makes "Portland, ME" require BOTH a Maine state
-        // match AND a Portland city/zip match, instead of matching every
-        // Portland nationwide (no state constraint) unioned with every
-        // Maine location (regardless of city) -- which is what a single
-        // flat OR list of all parts produces, and was scattering results
-        // across the whole country for any city name that happens to
-        // exist in multiple states, not just Portland.
-        const stateOrParts: string[] = [];
-        const otherOrParts: string[] = [];
-        for (const rawPart of parts.length > 0 ? parts : [trimmed]) {
-          const part = rawPart.replace(/[%]/g, '');
-          if (!part) continue;
+      if (!isBroadTerm) {
+        if (bounds) {
+          // A real geographic region -- either a state's actual extent
+          // (passed through as-is from the geocode result), or a ~50mi
+          // box expanded around a geocoded city/zip/address (see
+          // SEARCH_RADIUS_DEGREES above and where `bounds` gets computed
+          // in handleSearch/handleSelectSuggestion). Querying by the real
+          // geography instead of text-matching the searched name is what
+          // lets "Chicago, IL" include Evanston, Oak Park, Naperville --
+          // real nearby suburbs that don't happen to contain "Chicago" in
+          // their name -- instead of only the literal city-name match.
+          query = query
+            .gte('latitude', bounds.south)
+            .lte('latitude', bounds.north)
+            .gte('longitude', bounds.west)
+            .lte('longitude', bounds.east);
+        } else if (coords) {
+          // A point with no defined region (GPS "My Location", or a
+          // geocode result with no bounds at all) -- same ~50mi box,
+          // centered on the point instead of a search-provided region.
+          query = query
+            .gte('latitude', coords.lat - SEARCH_RADIUS_DEGREES)
+            .lte('latitude', coords.lat + SEARCH_RADIUS_DEGREES)
+            .gte('longitude', coords.lng - SEARCH_RADIUS_DEGREES)
+            .lte('longitude', coords.lng + SEARCH_RADIUS_DEGREES);
+        } else if (trimmed) {
+          // Fallback for when geocoding hasn't resolved (or failed) --
+          // the original text-based city/state/zip matching. Google
+          // Places descriptions (and plenty of manually-typed searches)
+          // are comma-separated -- "Anchorage, AK, USA", "Alaska, USA",
+          // "99501, USA", "123 Main St, Anchorage, AK 99501, USA".
+          // Splitting on commas and matching each part against
+          // city/state/zip (instead of the whole string as one
+          // substring) means any of those forms works, not just a bare
+          // city name. A trailing country part is dropped so it can't
+          // suppress otherwise-valid matches.
+          const parts = trimmed
+            .split(',')
+            .map((p) => p.trim())
+            .filter((p) => p && !BROAD_LOCATION_TERMS.has(p.toLowerCase()));
 
-          // The `state` column only ever stores 2-letter codes ("AK"), so a
-          // typed full name ("Alaska") has to be translated first or it can
-          // never match. resolveStateCode also accepts an already-valid code.
-          const stateCode = resolveStateCode(part);
-          if (stateCode) {
-            // A part that resolves to a real state code is almost
-            // certainly the state field of a structured address ("...,
-            // ME, USA"), not a city/zip fragment -- also ILIKE-matching
-            // it against city/postal_code as a generic 2-letter substring
-            // produces a flood of false positives (e.g. "ME" matches any
-            // city containing "me": Fremont, Sacramento, Yakima,
-            // Somerville...). Only the state match applies for this part.
-            stateOrParts.push(`state.ilike.%${stateCode}%`);
-          } else {
-            otherOrParts.push(`city.ilike.%${part}%`);
-            otherOrParts.push(`postal_code.ilike.%${part}%`);
-            otherOrParts.push(`state.ilike.%${part}%`);
+          // Recognized state-code parts and everything else are collected
+          // separately and applied as two independent .or() calls rather
+          // than one combined list -- supabase-js's .or() appends a
+          // separate `or=` query param each time it's called (confirmed
+          // by reading postgrest-js's source), and PostgREST ANDs
+          // separate top-level params together (confirmed live against
+          // Supabase). That's what makes "Portland, ME" require BOTH a
+          // Maine state match AND a Portland city/zip match, instead of
+          // every Portland nationwide unioned with every Maine location.
+          const stateOrParts: string[] = [];
+          const otherOrParts: string[] = [];
+          for (const rawPart of parts.length > 0 ? parts : [trimmed]) {
+            const part = rawPart.replace(/[%]/g, '');
+            if (!part) continue;
+
+            // The `state` column only ever stores 2-letter codes ("AK"),
+            // so a typed full name ("Alaska") has to be translated first
+            // or it can never match. resolveStateCode also accepts an
+            // already-valid code.
+            const stateCode = resolveStateCode(part);
+            if (stateCode) {
+              // A part that resolves to a real state code is almost
+              // certainly the state field of a structured address, not a
+              // city/zip fragment -- also ILIKE-matching it against
+              // city/postal_code as a generic 2-letter substring produces
+              // a flood of false positives (e.g. "ME" matches any city
+              // containing "me": Fremont, Sacramento, Yakima,
+              // Somerville...). Only the state match applies here.
+              stateOrParts.push(`state.ilike.%${stateCode}%`);
+            } else {
+              otherOrParts.push(`city.ilike.%${part}%`);
+              otherOrParts.push(`postal_code.ilike.%${part}%`);
+              otherOrParts.push(`state.ilike.%${part}%`);
+            }
           }
-        }
 
-        // No state part at all (just "Portland" alone, no state given) --
-        // matching every Portland nationwide is then the correct, expected
-        // behavior, not a bug; only AND in a state constraint when one was
-        // actually part of the search.
-        if (stateOrParts.length > 0) {
-          query = query.or(stateOrParts.join(','));
-        }
-        if (otherOrParts.length > 0) {
-          query = query.or(otherOrParts.join(','));
+          if (stateOrParts.length > 0) {
+            query = query.or(stateOrParts.join(','));
+          }
+          if (otherOrParts.length > 0) {
+            query = query.or(otherOrParts.join(','));
+          }
         }
       }
 
@@ -351,7 +393,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
       })) || [];
 
       setLocations(mapped);
-      saveSearchCache(searchText, services, mapped, coordsForCache, boundsForCache);
+      saveSearchCache(searchText, services, mapped, coords, bounds);
     } catch (error) {
       console.error('Error loading locations:', error);
     } finally {
@@ -452,19 +494,42 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
           // instance from the JS SDK, so its corners come from getters,
           // not raw JSON properties like the REST-based geocode below.
           const box = results[0].geometry.bounds || results[0].geometry.viewport;
-          setSearchBounds(
-            box
-              ? {
-                  south: box.getSouthWest().lat(),
-                  west: box.getSouthWest().lng(),
-                  north: box.getNorthEast().lat(),
-                  east: box.getNorthEast().lng(),
-                }
-              : null
-          );
+          const rawBounds = box
+            ? {
+                south: box.getSouthWest().lat(),
+                west: box.getSouthWest().lng(),
+                north: box.getNorthEast().lat(),
+                east: box.getNorthEast().lng(),
+              }
+            : null;
+          setSearchBounds(computeRegionBounds(coords, results[0].types, rawBounds));
         }
       });
     }
+  };
+
+  // Decides how much geography a geocoded result should actually cover.
+  // A state gets its own real extent (Google returns that directly);
+  // anything else (city, zip, street address) gets a fixed ~50mi box
+  // around the point instead of Google's own (often city-limits-tight)
+  // bounds -- that's specifically what makes a search include the real
+  // surrounding area (suburbs, nearby towns) rather than only the literal
+  // searched place. Always returns a real region, never null, since even
+  // an exact-address search should still show what's nearby.
+  const computeRegionBounds = (
+    coords: { lat: number; lng: number },
+    types: string[] | undefined,
+    rawBounds: { south: number; west: number; north: number; east: number } | null
+  ): { south: number; west: number; north: number; east: number } => {
+    if (rawBounds && types?.includes('administrative_area_level_1')) {
+      return rawBounds;
+    }
+    return {
+      south: coords.lat - SEARCH_RADIUS_DEGREES,
+      north: coords.lat + SEARCH_RADIUS_DEGREES,
+      west: coords.lng - SEARCH_RADIUS_DEGREES,
+      east: coords.lng + SEARCH_RADIUS_DEGREES,
+    };
   };
 
   const handleSearch = async () => {
@@ -496,7 +561,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
           effectiveCoords = coords;
 
           const box = result.geometry.bounds || result.geometry.viewport;
-          const bounds = box
+          const rawBounds = box
             ? {
                 south: box.southwest.lat,
                 west: box.southwest.lng,
@@ -504,6 +569,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
                 east: box.northeast.lng,
               }
             : null;
+          const bounds = computeRegionBounds(coords, result.types, rawBounds);
           setSearchBounds(bounds);
           effectiveBounds = bounds;
         }
