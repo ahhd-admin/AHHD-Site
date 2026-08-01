@@ -127,12 +127,25 @@ function MapContent({ locations, userCoords, searchBounds, radiusMiles }: MapSea
         }
 
         if (!bounds.isEmpty()) {
-          // Halved vertically (24 vs 48) -- the leftover top/bottom
-          // whitespace beyond the padding wasn't the padding itself, it
-          // was the map container's landscape aspect ratio leaving slack
-          // once the width-wise fit was satisfied, but a smaller minimum
-          // margin still visibly crops the view in as requested.
-          map.fitBounds(bounds, { top: 24, right: 48, bottom: 24, left: 48 });
+          // Marker-only bounds hug whatever's outermost, which for a
+          // state where results don't happen to reach every edge (e.g.
+          // no provider right at Illinois's northern or southern tip)
+          // reads as the state itself being cropped, not just a tight
+          // fit. A proportional buffer (not a fixed political boundary --
+          // that's what caused the Hawaii-in-the-ocean bug) gives some
+          // breathing room past the outermost real markers, sized to the
+          // cluster's own extent so it scales sensibly for both a tiny
+          // single-city search and a whole-state one. The floor (~3-4
+          // miles) keeps a small local cluster from staying zoomed to a
+          // single block.
+          const ne = bounds.getNorthEast();
+          const sw = bounds.getSouthWest();
+          const latBuffer = Math.max((ne.lat() - sw.lat()) * 0.12, 0.05);
+          const lngBuffer = Math.max((ne.lng() - sw.lng()) * 0.12, 0.05);
+          bounds.extend({ lat: ne.lat() + latBuffer, lng: ne.lng() + lngBuffer });
+          bounds.extend({ lat: sw.lat() - latBuffer, lng: sw.lng() - lngBuffer });
+
+          map.fitBounds(bounds, { top: 40, right: 56, bottom: 40, left: 56 });
         }
       }
       return;
