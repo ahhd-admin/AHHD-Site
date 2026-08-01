@@ -576,6 +576,14 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   // non-overlapping region, so there's no sizing/z-index tradeoff to make.
   const searchPanel = (
     <div className="bg-white rounded-2xl shadow-md border border-neutral-200 p-4">
+      {/* Gives the panel a landmark heading in both states -- without it,
+          the panel started cold with just the input once the pre-search
+          prompt below disappears after a search. neutral-600 measures
+          7.81:1 on white (AAA). */}
+      <h2 className="text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-2">
+        Find Care
+      </h2>
+
       {!hasSubmittedSearch && (
         <div className="mb-3">
           <div className="inline-flex items-center justify-center w-9 h-9 bg-primary-100 rounded-xl mb-1.5">

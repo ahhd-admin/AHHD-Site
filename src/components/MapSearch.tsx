@@ -17,6 +17,7 @@ interface MapSearchProps {
   userCoords?: { lat: number; lng: number } | null;
   searchBounds?: SearchBoundsLiteral | null;
   radiusMiles?: number;
+  hoveredLocationId?: string | null;
 }
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
@@ -34,7 +35,7 @@ const DEFAULT_ZOOM = 4.2;
 // for a real registered Map ID before production launch.
 const MAP_ID = 'DEMO_MAP_ID';
 
-function MapContent({ locations, userCoords, searchBounds, radiusMiles }: MapSearchProps) {
+function MapContent({ locations, userCoords, searchBounds, radiusMiles, hoveredLocationId }: MapSearchProps) {
   const map = useMap();
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
 
@@ -211,32 +212,41 @@ function MapContent({ locations, userCoords, searchBounds, radiusMiles }: MapSea
 
   return (
     <>
-      {locationsWithCoords.map((location) => (
-              <AdvancedMarker
-                key={location.location_id}
-                position={{ lat: location.latitude!, lng: location.longitude! }}
-                onClick={() => handlePinClick(location)}
-              >
-                <div
-                  style={{
-                    backgroundColor: '#ef4444',
-                    border: '3px solid white',
-                    borderRadius: '50%',
-                    width: '24px',
-                    height: '24px',
-                    cursor: 'pointer',
-                    // The browser's default tap/focus highlight renders as
-                    // a solid rectangle sized to the marker's hit area (not
-                    // the visible 24px circle), and during the click-driven
-                    // zoom transition that highlight gets scaled up with
-                    // the map tiles -- which reads as a big pixelated flash
-                    // right as you click, before the zoom settles.
-                    WebkitTapHighlightColor: 'transparent',
-                    outline: 'none',
-                  }}
-                />
-              </AdvancedMarker>
-            ))}
+      {locationsWithCoords.map((location) => {
+        const isHovered = hoveredLocationId === location.location_id;
+        return (
+          <AdvancedMarker
+            key={location.location_id}
+            position={{ lat: location.latitude!, lng: location.longitude! }}
+            onClick={() => handlePinClick(location)}
+            zIndex={isHovered ? 1 : 0}
+          >
+            <div
+              style={{
+                backgroundColor: '#ef4444',
+                border: '3px solid white',
+                borderRadius: '50%',
+                width: isHovered ? '32px' : '24px',
+                height: isHovered ? '32px' : '24px',
+                cursor: 'pointer',
+                // A visible ring, not just a size bump -- distinct from the
+                // "selected" state (opens the InfoWindow), which doesn't
+                // change the marker's own appearance at all.
+                boxShadow: isHovered ? '0 0 0 4px rgba(239,68,68,0.35)' : 'none',
+                transition: 'width 0.15s ease, height 0.15s ease, box-shadow 0.15s ease',
+                // The browser's default tap/focus highlight renders as
+                // a solid rectangle sized to the marker's hit area (not
+                // the visible 24px circle), and during the click-driven
+                // zoom transition that highlight gets scaled up with
+                // the map tiles -- which reads as a big pixelated flash
+                // right as you click, before the zoom settles.
+                WebkitTapHighlightColor: 'transparent',
+                outline: 'none',
+              }}
+            />
+          </AdvancedMarker>
+        );
+      })}
 
       {selectedLocationId && locationsWithCoords.find(l => l.location_id === selectedLocationId) && (() => {
         const location = locationsWithCoords.find(l => l.location_id === selectedLocationId)!;
@@ -301,6 +311,9 @@ export default function MapSearch(props: MapSearchProps) {
   const locationsWithCoords = locations.filter(
     (loc) => loc.latitude !== null && loc.longitude !== null
   );
+  // Lifted above MapContent (which renders the actual markers) since the
+  // results list below is a sibling of the map, not a child of it.
+  const [hoveredLocationId, setHoveredLocationId] = useState<string | null>(null);
 
   return (
     <div className="relative">
@@ -327,7 +340,7 @@ export default function MapSearch(props: MapSearchProps) {
             // DEFAULT_CENTER/DEFAULT_ZOOM below regardless of this.
             minZoom={3}
           >
-            <MapContent {...props} />
+            <MapContent {...props} hoveredLocationId={hoveredLocationId} />
           </Map>
         </APIProvider>
       </div>
@@ -344,12 +357,19 @@ export default function MapSearch(props: MapSearchProps) {
             {locationsWithCoords.map((location) => (
               <button
                 key={location.location_id}
+                onMouseEnter={() => setHoveredLocationId(location.location_id)}
+                onMouseLeave={() => setHoveredLocationId(null)}
                 onClick={() => {
                   if (location.latitude && location.longitude) {
+                    saveHomeScrollPosition();
                     window.location.href = `/provider/${buildProviderSlug(location.organization?.organization_name || location.location_name || '', location.achc_source_id)}`;
                   }
                 }}
-                className="w-full text-left p-2.5 md:p-3 bg-white rounded-lg border transition-all group active:scale-98 border-neutral-200 hover:border-primary-400 hover:shadow-md active:border-primary-500"
+                className={`w-full text-left p-2.5 md:p-3 bg-white rounded-lg border transition-all group active:scale-98 ${
+                  hoveredLocationId === location.location_id
+                    ? 'border-primary-400 shadow-md'
+                    : 'border-neutral-200'
+                } hover:border-primary-400 hover:shadow-md active:border-primary-500`}
               >
                 <div className="flex items-start gap-2 md:gap-3">
                   <div className="flex-1 min-w-0">
