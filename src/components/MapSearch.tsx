@@ -86,25 +86,54 @@ function MapContent({ locations, userCoords, searchBounds, radiusMiles }: MapSea
     if (!map) return;
 
     // searchBounds wins whenever it's present -- it's the real geographic
-    // extent of whatever was searched (a whole state, a city, a zip), and
-    // fitBounds computes whatever center/zoom actually fits that box, so
-    // ONE fixed pixel padding correctly frames every state from Rhode
-    // Island to Alaska with no per-region tuning. Geocoding happens once,
-    // in SearchHero (both to set this and to sort results by distance) --
-    // this used to re-geocode a second time here independently, which not
-    // only duplicated the API call but also lost the race against the
-    // sibling userCoords effect below (userCoords is set by that same
-    // search and always got applied first with a fixed zoom:11, which is
-    // why a state search kept zooming in instead of fitting the state).
+    // extent of whatever was searched (a whole state, a city, a zip).
+    // Geocoding happens once, in SearchHero (both to set this and to sort
+    // results by distance) -- this used to re-geocode a second time here
+    // independently, which not only duplicated the API call but also lost
+    // the race against the sibling userCoords effect below (userCoords is
+    // set by that same search and always got applied first with a fixed
+    // zoom:11, which is why a state search kept zooming in instead of
+    // fitting the state).
     if (searchBounds) {
-      const key = JSON.stringify(searchBounds);
+      const key = `${JSON.stringify(searchBounds)}|${locationsWithCoords.length}`;
       if (hasZoomedToBounds.current !== key) {
         hasZoomedToBounds.current = key;
-        const bounds = new google.maps.LatLngBounds(
-          { lat: searchBounds.south, lng: searchBounds.west },
-          { lat: searchBounds.north, lng: searchBounds.east }
-        );
-        map.fitBounds(bounds, 48);
+
+        // Google's official state/region boundary is often much bigger
+        // than where any actual result is -- Hawaii's includes the
+        // uninhabited Northwestern Hawaiian Islands out past -178, which
+        // pulls the boundary's center into open ocean, nowhere near the
+        // populated islands the results are actually on. Fitting to the
+        // real result coordinates instead centers on where the data
+        // actually is, and incidentally crops in tighter for states like
+        // Alaska/Illinois whose bounding rectangle has a lot of empty
+        // corner area no result ever falls inside. searchBounds is only
+        // the fallback now, for a region with zero matching results (or
+        // exactly one, where a bare point isn't a useful "fit").
+        const bounds = new google.maps.LatLngBounds();
+        if (locationsWithCoords.length > 1) {
+          locationsWithCoords.forEach((loc) => {
+            bounds.extend({ lat: loc.latitude!, lng: loc.longitude! });
+          });
+        } else {
+          bounds.extend({ lat: searchBounds.south, lng: searchBounds.west });
+          bounds.extend({ lat: searchBounds.north, lng: searchBounds.east });
+          if (locationsWithCoords.length === 1) {
+            bounds.extend({
+              lat: locationsWithCoords[0].latitude!,
+              lng: locationsWithCoords[0].longitude!,
+            });
+          }
+        }
+
+        if (!bounds.isEmpty()) {
+          // Halved vertically (24 vs 48) -- the leftover top/bottom
+          // whitespace beyond the padding wasn't the padding itself, it
+          // was the map container's landscape aspect ratio leaving slack
+          // once the width-wise fit was satisfied, but a smaller minimum
+          // margin still visibly crops the view in as requested.
+          map.fitBounds(bounds, { top: 24, right: 48, bottom: 24, left: 48 });
+        }
       }
       return;
     }
