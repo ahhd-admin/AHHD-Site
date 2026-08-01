@@ -42,7 +42,11 @@ export default function ProviderCard({ location, distance }: ProviderCardProps) 
 
           {activeAccreditations.length > 0 && (
             <div className="flex-shrink-0 ml-4">
-              <div className="bg-success-100 text-success-800 px-3 py-1.5 rounded-full flex items-center gap-1.5 text-xs font-semibold">
+              {/* success-100/success-900 measures 8.57:1 (AAA); a light,
+                  self-contained pill reads clearly on both this white card
+                  and the dark navy provider-page banner (see
+                  ProviderDetailPage.tsx), so both use the same pair. */}
+              <div className="bg-success-100 text-success-900 px-3 py-1.5 rounded-full flex items-center gap-1.5 text-xs font-semibold">
                 <Shield className="w-3.5 h-3.5" />
                 <span>Accredited</span>
               </div>

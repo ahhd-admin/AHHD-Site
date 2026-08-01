@@ -140,10 +140,13 @@ export default function ProviderDetailPage({ locationId }: ProviderDetailPagePro
 
               {activeAccreditations.length > 0 && (
                 <div className="flex-shrink-0 ml-6">
-                  {/* success-500 with white text measures 3.99:1 -- fails WCAG AA
-                      for normal-size text (needs 4.5:1). success-800 measures
-                      7.68:1, clearing even the AAA bar (7:1). */}
-                  <div className="bg-success-800 text-white px-4 py-2 rounded-lg flex items-center gap-2">
+                  {/* success-100/success-900 measures 8.57:1 (AAA) -- a
+                      light, self-contained pill so the same badge style
+                      reads clearly here (dark navy banner) and on the white
+                      ProviderCard, rather than two different treatments.
+                      (Earlier version was solid success-500/white text,
+                      which measured 3.99:1 -- below the 4.5:1 AA floor.) */}
+                  <div className="bg-success-100 text-success-900 px-4 py-2 rounded-lg flex items-center gap-2">
                     <Shield className="w-5 h-5" />
                     <span className="font-medium">Accredited</span>
                   </div>

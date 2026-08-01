@@ -244,6 +244,22 @@ function MapContent({ locations, userCoords, searchBounds, radiusMiles }: MapSea
               <h3 className="font-semibold text-navy-800 mb-1">
                 {location.organization?.organization_name}
               </h3>
+              {location.service_types && location.service_types.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {location.service_types.map((st) => (
+                    // navy-800 on primary-100 measures 11.33:1 (AAA) --
+                    // the previously-used primary-700/primary-100 pairing
+                    // elsewhere in the app only measures 4.21:1, just under
+                    // even the AA floor for text this size.
+                    <span
+                      key={st.service_type_id}
+                      className="inline-block px-2 py-0.5 bg-primary-100 text-navy-800 rounded-full text-xs font-medium"
+                    >
+                      {st.service_type_name}
+                    </span>
+                  ))}
+                </div>
+              )}
               <p className="text-sm text-neutral-600 mb-2">
                 {location.address_line_1}<br />
                 {location.city}, {location.state} {location.postal_code}
