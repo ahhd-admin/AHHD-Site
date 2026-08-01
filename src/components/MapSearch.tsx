@@ -83,8 +83,11 @@ function MapContent({ locations, searchLocation, userCoords, radiusMiles }: MapS
         hasZoomedToSearch.current = '';
 
         const newZoom = 11;
-        map.panTo(userCoords);
-        map.setZoom(newZoom);
+        // A single camera move instead of an animated panTo followed by a
+        // separate setZoom -- the two-step version watches an animated
+        // pan finish before the zoom (and its tile fetch) even starts,
+        // which reads as slower than the actual tile-loading time alone.
+        map.moveCamera({ center: userCoords, zoom: newZoom });
       }
     }
   }, [userCoords, map]);
@@ -104,27 +107,31 @@ function MapContent({ locations, searchLocation, userCoords, radiusMiles }: MapS
 
         if (data.status === 'OK' && data.results && data.results.length > 0) {
           const result = data.results[0];
-          const newCenter = {
-            lat: result.geometry.location.lat,
-            lng: result.geometry.location.lng
-          };
 
-          const viewport = result.geometry.viewport;
-          let zoomLevel = 12;
+          // `bounds` is the real administrative extent of the result (only
+          // present for regions -- states, cities, zips); a street-address
+          // result only gets `viewport`, a smaller "reasonable to display"
+          // box, and a bare point has neither. fitBounds computes whatever
+          // center/zoom actually fits whichever box is available itself --
+          // unlike the old manual zoom-from-viewport-width formula, it
+          // doesn't need per-region-size tuning, so ONE fixed pixel padding
+          // correctly fits every state from Rhode Island to Alaska without
+          // a lookup table. 48px reads as a comfortable margin at both the
+          // 500px (mobile) and 600px (desktop) map heights used below.
+          const box = result.geometry.bounds || result.geometry.viewport;
 
-          if (viewport) {
-            const GLOBE_WIDTH = 256;
-            const west = viewport.southwest.lng;
-            const east = viewport.northeast.lng;
-            const angle = east - west;
-            if (angle > 0) {
-              const zoom = Math.round(Math.log(window.innerWidth * 360 / angle / GLOBE_WIDTH) / Math.LN2);
-              zoomLevel = Math.max(8, Math.min(zoom - 1, 15));
-            }
+          if (box) {
+            const bounds = new google.maps.LatLngBounds(
+              { lat: box.southwest.lat, lng: box.southwest.lng },
+              { lat: box.northeast.lat, lng: box.northeast.lng }
+            );
+            map.fitBounds(bounds, 48);
+          } else {
+            map.moveCamera({
+              center: { lat: result.geometry.location.lat, lng: result.geometry.location.lng },
+              zoom: 12,
+            });
           }
-
-          map.panTo(newCenter);
-          map.setZoom(zoomLevel);
         }
       } catch (error) {
         console.error('Geocoding error:', error);
@@ -140,8 +147,11 @@ function MapContent({ locations, searchLocation, userCoords, radiusMiles }: MapS
     setSelectedLocationId(location.location_id);
     if (location.latitude && location.longitude && map) {
       const newCenter = { lat: location.latitude, lng: location.longitude };
-      map.panTo(newCenter);
-      map.setZoom(14);
+      // Jumping the zoom level here is often a big jump (e.g. from a
+      // nationwide zoom straight to 14), which needs many new tile levels
+      // either way -- moveCamera at least avoids adding a separate
+      // animated pan on top of that tile-loading wait.
+      map.moveCamera({ center: newCenter, zoom: 14 });
     }
   };
 

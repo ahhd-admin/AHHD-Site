@@ -7,6 +7,7 @@ import { supabase } from '../lib/supabase';
 import type { LocationWithDetails } from '../types/database';
 import { calculateDistance } from '../lib/geoUtils';
 import { SERVICE_CATEGORIES, ALL_SERVICES } from '../lib/serviceCategories';
+import { resolveStateCode } from '../lib/usStates';
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
 
@@ -122,19 +123,47 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
         .from('locations')
         .select(`
           *,
-          organization:organizations(*),
+          organization:organizations(organization_id,organization_name,website_url),
           service_types:location_service_types(
-            service_type:service_types(*)
+            service_type:service_types(service_type_id,service_type_name,service_type_slug)
           ),
-          accreditation_records(*)
+          accreditation_records(accreditation_id,accrediting_body,accreditation_status,is_current_record)
         `)
         .eq('listing_status', 'published')
         .eq('accepts_public_display', true);
 
       const trimmed = searchText.trim();
       if (trimmed && !BROAD_LOCATION_TERMS.has(trimmed.toLowerCase())) {
-        const term = trimmed.replace(/[%,]/g, '');
-        query = query.or(`city.ilike.%${term}%,state.ilike.%${term}%,postal_code.ilike.%${term}%`);
+        // Google Places descriptions (and plenty of manually-typed searches)
+        // are comma-separated -- "Anchorage, AK, USA", "Alaska, USA",
+        // "99501, USA", "123 Main St, Anchorage, AK 99501, USA". Splitting
+        // on commas and matching each part against city/state/zip (instead
+        // of the whole string as one substring) means any of those forms
+        // works, not just a bare city name. A trailing country part is
+        // dropped so it can't suppress otherwise-valid matches.
+        const parts = trimmed
+          .split(',')
+          .map((p) => p.trim())
+          .filter((p) => p && !BROAD_LOCATION_TERMS.has(p.toLowerCase()));
+
+        const orParts: string[] = [];
+        for (const rawPart of parts.length > 0 ? parts : [trimmed]) {
+          const part = rawPart.replace(/[%]/g, '');
+          if (!part) continue;
+          orParts.push(`city.ilike.%${part}%`);
+          orParts.push(`postal_code.ilike.%${part}%`);
+
+          // The `state` column only ever stores 2-letter codes ("AK"), so a
+          // typed full name ("Alaska") has to be translated first or it can
+          // never match. resolveStateCode also accepts an already-valid
+          // code, so this is safe to run unconditionally.
+          const stateCode = resolveStateCode(part);
+          orParts.push(`state.ilike.%${stateCode ?? part}%`);
+        }
+
+        if (orParts.length > 0) {
+          query = query.or(orParts.join(','));
+        }
       }
 
       if (services.length > 0) {
@@ -144,11 +173,11 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
         query = query
           .select(`
             *,
-            organization:organizations(*),
+            organization:organizations(organization_id,organization_name,website_url),
             service_types:location_service_types!inner(
-              service_type:service_types!inner(*)
+              service_type:service_types!inner(service_type_id,service_type_name,service_type_slug)
             ),
-            accreditation_records(*)
+            accreditation_records(accreditation_id,accrediting_body,accreditation_status,is_current_record)
           `)
           .in('location_service_types.service_types.service_type_slug', services);
       }
