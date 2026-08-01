@@ -478,7 +478,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
               (Google places it top-right by default); staying a corner
               card leaves that clear. */}
           <div
-            className={`absolute z-20 transition-all duration-300 w-[calc(100%-1.5rem)] max-w-4xl ${
+            className={`absolute z-20 transition-all duration-300 w-[calc(100%-1.5rem)] max-w-2xl ${
               hasSubmittedSearch
                 ? 'top-3 left-3'
                 : 'top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2'
