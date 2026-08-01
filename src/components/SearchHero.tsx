@@ -124,6 +124,11 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   const [suggestions, setSuggestions] = useState<google.maps.places.AutocompletePrediction[]>([]);
   const autocompleteService = useRef<google.maps.places.AutocompleteService | null>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
+  // Set by whichever geocode call actually resolves the current location
+  // (handleSelectSuggestion's own geocode, or handleSearch's) -- read at
+  // submit time to decide whether a real boundary trace should even be
+  // attempted (see shouldTraceBoundary below).
+  const lastGeocodeTypesRef = useRef<string[] | undefined>(undefined);
 
   // Restores a search coming in from the URL (e.g. hitting the browser
   // back button after clicking into a provider page). Checks the results
@@ -525,6 +530,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             : null;
           setSearchBounds(computeRegionBounds(coords, results[0].types, rawBounds));
           setDistanceRadius(suggestDefaultRadius(results[0].types));
+          lastGeocodeTypesRef.current = results[0].types;
         }
       });
     }
@@ -589,6 +595,20 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
     return 25; // city/locality and anything else
   };
 
+  // A real traced boundary is only worth attempting for a city or state --
+  // Nominatim doesn't reliably have ZIP/address-level polygons anyway,
+  // and (confirmed live) a ZIP search's compound text ("Chicago, IL
+  // 60640, USA") gets resolved by Nominatim to the city as its best
+  // match -- a real boundary, just the wrong scope for what was actually
+  // searched. ZIP/address searches already have an accurate outline from
+  // Google's own bounds (see computeRegionBounds), so skip the
+  // mismatched trace entirely rather than show it.
+  const shouldTraceBoundary = (types: string[] | undefined): boolean =>
+    !types?.includes('postal_code') &&
+    !types?.includes('street_address') &&
+    !types?.includes('premise') &&
+    !types?.includes('subpremise');
+
   const handleSearch = async () => {
     setShowSuggestions(false);
     if (!location.trim()) return;
@@ -599,10 +619,6 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
     // below resolves) so a stale outline from the previous search doesn't
     // linger on screen while this one is in flight.
     setBoundaryPolygon(null);
-    // Fired without awaiting -- this is a best-effort visual extra (see
-    // boundaryLookup.ts), never something the actual search should wait
-    // on or be slowed down by.
-    fetchSearchBoundary(location).then(setBoundaryPolygon);
 
     // Tracked locally rather than read back from userCoords/searchBounds
     // state below -- setUserCoords/setSearchBounds won't have landed by
@@ -610,6 +626,11 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
     // reading state here would cache the previous search's coordinates.
     let effectiveCoords = userCoords;
     let effectiveBounds = searchBounds;
+    // Whichever geocode actually ran resolves this -- handleSelectSuggestion's
+    // own geocode if a suggestion was picked (userCoords already set, so
+    // this function's own geocode below is skipped entirely), or the
+    // geocode just below otherwise.
+    let effectiveTypes = lastGeocodeTypesRef.current;
 
     if (!userCoords) {
       try {
@@ -626,6 +647,8 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
           };
           setUserCoords(coords);
           effectiveCoords = coords;
+          effectiveTypes = result.types;
+          lastGeocodeTypesRef.current = result.types;
 
           const box = result.geometry.bounds || result.geometry.viewport;
           const rawBounds = box
@@ -645,6 +668,21 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
         console.error('Geocoding error:', error);
       }
     }
+
+    // Only attempted for city/state-level searches -- a ZIP code or exact
+    // address search already has an accurate outline from Google's own
+    // bounds (see computeRegionBounds), and Nominatim doesn't reliably
+    // have real ZIP/address-level boundary polygons anyway. Confirmed
+    // live: searching "Chicago, IL 60640, USA" (a ZIP-level result) had
+    // Nominatim resolve the whole compound string to Chicago the city --
+    // a real boundary, just the wrong scope for what was actually
+    // searched, tracing the city while the map zoomed to the ZIP. Fired
+    // without awaiting either way -- best-effort visual extra, never
+    // something the actual search should wait on.
+    if (shouldTraceBoundary(effectiveTypes)) {
+      fetchSearchBoundary(location).then(setBoundaryPolygon);
+    }
+
     loadLocations(location, ensureServicesSelected(), effectiveCoords, effectiveBounds);
   };
 
