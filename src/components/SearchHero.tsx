@@ -1498,7 +1498,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             grid. */}
         <div className="mb-4 md:mb-6">
           <h1 className="text-3xl md:text-4xl font-heading font-bold text-navy-800 mb-2">
-            Find Quality Care Providers
+            Find Accredited Care Providers
           </h1>
 
           <p className="text-base text-neutral-700 max-w-3xl leading-relaxed">

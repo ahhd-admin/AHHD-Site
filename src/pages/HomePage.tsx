@@ -23,7 +23,7 @@ export default function HomePage() {
                 Understanding Accreditation
               </h2>
               <p className="text-xl text-neutral-700 max-w-3xl leading-relaxed">
-                Accreditation is a voluntary review process where an independent organization checks that a healthcare provider meets nationally recognized standards for care quality and safety
+                What accreditation means, and why it's part of every listing on this site
               </p>
             </div>
 
