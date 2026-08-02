@@ -173,7 +173,16 @@ function MapContent({ locations, userCoords, searchBounds, boundaryPolygon, boun
       searchRegionRectRef.current = null;
     }
 
-    const canShowRectangle = searchRegionScale !== 'city' && searchRegionScale !== 'state';
+    // zip/address searches already get the radius circle below -- showing
+    // this rectangle too (confirmed live: a Willis Tower search drew both
+    // at once) is a redundant second region indicator for the exact same
+    // search, the same reason city/state only ever show their traced
+    // boundary and nothing else layered on top of it.
+    const canShowRectangle =
+      searchRegionScale !== 'city' &&
+      searchRegionScale !== 'state' &&
+      searchRegionScale !== 'zip' &&
+      searchRegionScale !== 'address';
     if (searchBounds && !boundaryPolygon && !boundaryLoading && canShowRectangle) {
       searchRegionRectRef.current = new google.maps.Rectangle({
         bounds: {
