@@ -63,8 +63,8 @@ export default function ProviderDetailPage({ locationId }: ProviderDetailPagePro
       <div className="min-h-screen flex flex-col">
         <Header />
         <main className="flex-1 flex items-center justify-center py-20">
-          <div className="text-center">
-            <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-primary-200 border-t-primary-600 mb-4"></div>
+          <div className="text-center" role="status">
+            <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-primary-200 border-t-primary-600 mb-4" aria-hidden="true"></div>
             <p className="text-neutral-600">Loading provider details...</p>
           </div>
         </main>

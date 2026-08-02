@@ -441,6 +441,13 @@ function MapContent({ locations, userCoords, searchBounds, boundaryPolygon, boun
             }}
             position={{ lat: location.latitude!, lng: location.longitude! }}
             onClick={() => handlePinClick(location)}
+            // Google's underlying custom element is keyboard-focusable
+            // with role="button" out of the box, but with no accessible
+            // name -- a screen reader announced only "button" for every
+            // pin, with no way to tell which provider it was. `title`
+            // becomes the marker's aria-label (a real
+            // AdvancedMarkerElementOptions field, not a DOM tooltip here).
+            title={location.organization?.organization_name}
             zIndex={isHovered ? 1 : 0}
             // AdvancedMarker wraps children in its own content element,
             // separate from the inner <div> below -- styling only the

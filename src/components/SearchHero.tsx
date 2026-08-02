@@ -1511,7 +1511,13 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
                   change. */}
               {hasSubmittedSearch && !(loading && filteredLocations.length === 0) && (
                 <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-neutral-200 bg-neutral-50 animate-fade-in-up">
-                  <p className="text-sm text-neutral-600">
+                  {/* aria-live so a screen reader user hears the updated
+                      count after submitting a search or changing Type of
+                      Care -- previously silent, so the only way to tell a
+                      search had registered was visually re-reading the
+                      page. polite (not assertive) so it doesn't interrupt
+                      whatever the user is currently doing. */}
+                  <p className="text-sm text-neutral-600" aria-live="polite">
                     {filteredLocations.length} accredited {filteredLocations.length === 1 ? 'provider' : 'providers'}
                     {location && ` near ${location}`}
                   </p>
@@ -1567,8 +1573,9 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
                   the map's camera/zoom back to a fresh fit on every
                   refinement, discarding any manual pan/zoom. */}
               {loading && filteredLocations.length === 0 ? (
-                <div className="h-[500px] md:h-[600px] flex items-center justify-center bg-neutral-50">
-                  <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-primary-200 border-t-primary-600"></div>
+                <div className="h-[500px] md:h-[600px] flex items-center justify-center bg-neutral-50" role="status">
+                  <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-primary-200 border-t-primary-600" aria-hidden="true"></div>
+                  <span className="sr-only">Loading search results…</span>
                 </div>
               ) : viewMode === 'list' && hasSubmittedSearch ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 min-h-[500px] bg-neutral-50 animate-fade-in-up">
