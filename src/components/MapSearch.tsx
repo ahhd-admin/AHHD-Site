@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { BadgeCheck } from 'lucide-react';
-import { APIProvider, Map, AdvancedMarker, InfoWindow, useMap } from '@vis.gl/react-google-maps';
+import { Map, AdvancedMarker, InfoWindow, useMap } from '@vis.gl/react-google-maps';
 import type { LocationWithDetails } from '../types/database';
 import { buildProviderSlug } from '../lib/slug';
 import { formatDistance } from '../lib/geoUtils';
@@ -47,8 +47,6 @@ interface MapSearchProps {
   // that distinction matters.
   searchGeneration?: number;
 }
-
-const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
 
 const DEFAULT_CENTER = { lat: 39.8283, lng: -95.5795 };
 const DEFAULT_ZOOM = 4.2;
@@ -699,44 +697,46 @@ export default function MapSearch(props: MapSearchProps) {
   const [hoveredLocationId, setHoveredLocationId] = useState<string | null>(null);
 
   return (
-    // Wraps both the map and the results list below it (not just the map)
-    // so ResultsList can reach the map instance via useMap() -- see the
-    // comment on that component for why that requires being inside
-    // APIProvider, not just visually below the map.
-    <APIProvider apiKey={GOOGLE_MAPS_API_KEY}>
-      <div className="relative">
-        <div className="h-[500px] md:h-[600px] w-full rounded-xl overflow-hidden touch-manipulation">
-          <Map
-            defaultCenter={DEFAULT_CENTER}
-            defaultZoom={DEFAULT_ZOOM}
-            mapId={MAP_ID}
-            gestureHandling="greedy"
-            disableDefaultUI={false}
-            scrollwheel={true}
-            clickableIcons={false}
-            mapTypeControl={false}
-            fullscreenControl={true}
-            streetViewControl={false}
-            zoomControl={true}
-            // No pan restriction -- a bounded box kept causing exactly the
-            // Alaska/Hawaii positioning problems it was meant to prevent
-            // (Google silently recenters the camera to whatever fits
-            // inside the restriction when a fitBounds target doesn't,
-            // which is what made those searches look off-center/missing).
-            // The initial view is still centered on the contiguous US via
-            // DEFAULT_CENTER/DEFAULT_ZOOM below regardless of this.
-            minZoom={3}
-          >
-            <MapContent {...props} hoveredLocationId={hoveredLocationId} />
-          </Map>
-        </div>
-
-        <ResultsList
-          locations={locationsWithCoords}
-          hoveredLocationId={hoveredLocationId}
-          setHoveredLocationId={setHoveredLocationId}
-        />
+    // No APIProvider here -- SearchHero already wraps this whole component
+    // tree in one (SearchHero.tsx's outer <APIProvider>), and ResultsList
+    // reaches the map instance via useMap() through that same context. A
+    // second, nested APIProvider used to live here; @vis.gl/react-google-maps
+    // doesn't support nested providers cleanly, so it re-triggered the Maps
+    // script load with different params on every mount (confirmed via a
+    // functional audit: 5x "already been loaded with different parameters"
+    // console warning per page load).
+    <div className="relative">
+      <div className="h-[500px] md:h-[600px] w-full rounded-xl overflow-hidden touch-manipulation">
+        <Map
+          defaultCenter={DEFAULT_CENTER}
+          defaultZoom={DEFAULT_ZOOM}
+          mapId={MAP_ID}
+          gestureHandling="greedy"
+          disableDefaultUI={false}
+          scrollwheel={true}
+          clickableIcons={false}
+          mapTypeControl={false}
+          fullscreenControl={true}
+          streetViewControl={false}
+          zoomControl={true}
+          // No pan restriction -- a bounded box kept causing exactly the
+          // Alaska/Hawaii positioning problems it was meant to prevent
+          // (Google silently recenters the camera to whatever fits
+          // inside the restriction when a fitBounds target doesn't,
+          // which is what made those searches look off-center/missing).
+          // The initial view is still centered on the contiguous US via
+          // DEFAULT_CENTER/DEFAULT_ZOOM below regardless of this.
+          minZoom={3}
+        >
+          <MapContent {...props} hoveredLocationId={hoveredLocationId} />
+        </Map>
       </div>
-    </APIProvider>
+
+      <ResultsList
+        locations={locationsWithCoords}
+        hoveredLocationId={hoveredLocationId}
+        setHoveredLocationId={setHoveredLocationId}
+      />
+    </div>
   );
 }

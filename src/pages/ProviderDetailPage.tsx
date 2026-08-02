@@ -135,8 +135,8 @@ export default function ProviderDetailPage({ locationId }: ProviderDetailPagePro
               <span className="text-white">Provider Details</span>
             </div>
 
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
+            <div className="flex items-start justify-between flex-wrap gap-4">
+              <div className="flex-1 min-w-0">
                 <h1 className="text-3xl md:text-4xl font-heading font-bold mb-3 text-white">
                   {location.organization?.organization_name || 'Healthcare Provider'}
                 </h1>
@@ -151,7 +151,14 @@ export default function ProviderDetailPage({ locationId }: ProviderDetailPagePro
               </div>
 
               {activeAccreditations.length > 0 && (
-                <div className="flex-shrink-0 ml-6">
+                // flex-wrap on the parent (not a fixed ml-6) lets this
+                // pill drop below the title on narrow screens instead of
+                // getting pushed past the viewport edge -- confirmed via
+                // a functional audit that the un-wrapped version caused a
+                // page-wide horizontal scrollbar at 390px on every
+                // provider page with an active accreditation (most of
+                // them).
+                <div className="flex-shrink-0">
                   {/* success-100/success-900 measures 8.57:1 (AAA) -- a
                       light, self-contained pill so the same badge style
                       reads clearly here (dark navy banner) and on the white

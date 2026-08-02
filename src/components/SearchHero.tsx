@@ -1073,7 +1073,14 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
           // this is the only way to tell "geocode legitimately found
           // nothing" apart from "the query silently fell back to
           // ILIKE-text-matching with a leftover scale from last time."
-          console.error('Geocoding failed for search:', location, data.status, data.error_message);
+          // ZERO_RESULTS here just means "nothing at that address" -- an
+          // entirely normal outcome of a real user search, not a bug. Only
+          // logging in DEV keeps the diagnostic value (see above) without
+          // every ordinary no-results search reporting as a console error
+          // in production, where it could trip error-monitoring tooling.
+          if (import.meta.env.DEV) {
+            console.error('Geocoding failed for search:', location, data.status, data.error_message);
+          }
           effectiveScale = undefined;
           effectiveStateCode = null;
           lastGeocodeScaleRef.current = undefined;
