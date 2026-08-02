@@ -16,16 +16,17 @@ export default function Footer() {
           <p className="text-xs mb-1.5">
             AHHD is an informational directory and does not endorse specific providers.
           </p>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-            <p>&copy; 2026 Accredited Home Healthcare Directory</p>
-            {/* Color set directly on the <a>, not inherited -- index.css's
-                global `a { text-primary-600 }` rule overrides any parent
-                color otherwise (see the documented gotcha in
-                DESIGN-SYSTEM-COLOR-PALETTE.md). */}
-            <a href="/privacy" className="text-neutral-400 hover:text-white underline">
-              Privacy Policy
-            </a>
-          </div>
+          <p className="mb-2">&copy; 2026 Accredited Home Healthcare Directory</p>
+          {/* Its own small, separate line -- not inline with the copyright
+              text -- since it's a distinct kind of link (legal reference,
+              not attribution) and doesn't need equal visual weight.
+              Color set directly on the <a>, not inherited -- index.css's
+              global `a { text-primary-600 }` rule overrides any parent
+              color otherwise (see the documented gotcha in
+              DESIGN-SYSTEM-COLOR-PALETTE.md). */}
+          <a href="/privacy" className="text-xs text-neutral-400 hover:text-white underline">
+            Privacy Policy
+          </a>
         </div>
       </div>
     </footer>
