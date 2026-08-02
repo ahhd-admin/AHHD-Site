@@ -1313,10 +1313,10 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
 
       {!hasSubmittedSearch && (
         <div className="mb-3">
-          <div className="inline-flex items-center justify-center w-9 h-9 bg-primary-100 rounded-xl mb-1.5">
-            <MapPin className="w-5 h-5 text-navy-800" />
+          <div className="flex items-center gap-2">
+            <MapPin className="w-5 h-5 text-navy-800 flex-shrink-0" />
+            <p className="font-semibold text-navy-800 text-sm">Where are you looking for care?</p>
           </div>
-          <p className="font-semibold text-navy-800 text-sm">Where are you looking for care?</p>
           <p className="text-xs text-neutral-600 mt-0.5">Enter a state, address, or ZIP code</p>
         </div>
       )}
