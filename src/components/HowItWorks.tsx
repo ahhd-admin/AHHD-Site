@@ -60,7 +60,7 @@ export default function HowItWorks() {
               Important Notice
             </h3>
             <p className="text-neutral-700 leading-relaxed text-lg">
-              The Accredited Home Healthcare Directory (AHHD) is an informational resource. Listings are based on accreditation data from recognized accrediting bodies. We don't endorse specific providers, so always verify details and conduct your own research when choosing a care provider.
+              The Accredited Home Healthcare Directory (AHHD) is an informational resource. Provider details are based on accreditation data from recognized accrediting bodies. We don't endorse specific providers, so always verify details and conduct your own research when choosing a care provider.
             </p>
           </div>
         </div>

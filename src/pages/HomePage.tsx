@@ -24,7 +24,7 @@ export default function HomePage() {
                 Understanding Accreditation
               </h2>
               <p className="text-xl text-neutral-700 max-w-3xl leading-relaxed">
-                What accreditation means, and why it's part of every listing on this site
+                What accreditation means, and why every provider on this site has it
               </p>
             </div>
 
