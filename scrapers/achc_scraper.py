@@ -1099,9 +1099,66 @@ async def write_to_supabase_direct(normalized_rows: List[dict], batch_size: int 
                     raise Exception(f"Supabase RPC failed (batch {batch_num}): HTTP {resp.status} — {text[:300]}")
                 data = await resp.json()
                 for k, v in (data or {}).items():
-                    totals[k] = totals.get(k, 0) + (v or 0)
+                    # skipped_details is a list (per-row detail for the
+                    # row-issues email), every other field is a plain
+                    # count -- list fields concatenate across batches,
+                    # numeric fields sum. Numeric '+' on a list would
+                    # raise (0 + [...] is a TypeError in Python).
+                    if isinstance(v, list):
+                        totals[k] = totals.get(k, []) + v
+                    else:
+                        totals[k] = totals.get(k, 0) + (v or 0)
 
     return totals
+
+
+async def notify_row_issues(sb_result: dict, run_metadata: dict) -> None:
+    """Email a summary when individual rows had a problem even though the
+    overall run succeeded -- a geocode that came back empty (won't appear
+    on the map until resolved) or a location the merge RPC had to skip
+    (pre-existing duplicate-data conflict). Independent of the Google
+    Sheets write path (currently disconnected -- see
+    MVP-Rollout-Roadmap.md), unlike the completion/failure emails that
+    only fire from inside write_to_google_sheets.
+    """
+    geocode_failed = sb_result.get("geocode_failed", 0) or 0
+    locations_skipped = sb_result.get("locations_skipped", 0) or 0
+    if geocode_failed <= 0 and locations_skipped <= 0:
+        return
+    if not GOOGLE_SHEETS_URL:
+        print(f"WARNING: {geocode_failed} geocode failures / {locations_skipped} skipped locations this run, "
+              f"but GOOGLE_SHEETS_WEB_APP_URL is not set — cannot email the summary.")
+        return
+
+    samples = []
+    if os.path.exists("geocode_failures.json"):
+        with open("geocode_failures.json", "r", encoding="utf-8") as f:
+            samples = json.load(f)
+
+    payload = {
+        "action": "notify_row_issues",
+        "secret": SCRAPER_SECRET,
+        "run_id": run_metadata.get("run_id", "unknown"),
+        "github_run_id": os.getenv("GITHUB_RUN_ID", ""),
+        "geocode_failed": geocode_failed,
+        "locations_skipped": locations_skipped,
+        "geocode_failed_samples": samples[:15],
+        "skipped_details": (sb_result.get("skipped_details") or [])[:15],
+    }
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                GOOGLE_SHEETS_URL,
+                json=payload,
+                headers={"Content-Type": "application/json"},
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as resp:
+                text = await resp.text()
+                print(f"notify_row_issues: HTTP {resp.status} — {text[:200]}")
+    except Exception as exc:
+        # Never let a notification failure abort an otherwise-successful run.
+        print(f"notify_row_issues failed (non-fatal): {exc}")
 
 
 async def write_to_google_sheets(raw_rows: List[dict], normalized_rows: List[dict], run_metadata: dict):
@@ -1319,6 +1376,7 @@ async def main():
         print("Writing normalized rows directly to Supabase...")
         sb_result = await write_to_supabase_direct(normalized)
         print(f"Supabase direct write complete: {sb_result}")
+        await notify_row_issues(sb_result, run_metadata)
     else:
         print("Direct Supabase write disabled (ENABLE_DIRECT_SUPABASE=false)")
 

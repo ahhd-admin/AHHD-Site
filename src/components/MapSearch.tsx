@@ -67,6 +67,30 @@ function MapContent({ locations, userCoords, searchBounds, boundaryPolygon, boun
   const map = useMap();
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
 
+  // Google's own InfoWindow close button (.gm-ui-hover-effect) can't be
+  // hidden with a normal CSS rule -- confirmed live that even an
+  // external stylesheet rule with !important doesn't win against it (its
+  // display is set via a direct inline style, and something about how
+  // Google's renderer manages that element keeps it showing regardless).
+  // Setting the property via the JS CSSOM API with 'important' priority,
+  // directly on the actual element, is what actually sticks. A
+  // MutationObserver re-applies it if Google re-renders/re-adds the
+  // button (e.g. switching between pins), since a one-time hide on open
+  // wouldn't survive that. Runs whenever a pin is selected -- our own
+  // close button (see the InfoWindow content below) replaces this one.
+  useEffect(() => {
+    if (!selectedLocationId) return;
+    const hideNativeCloseButton = () => {
+      document.querySelectorAll('.gm-style-iw-chr .gm-ui-hover-effect').forEach((el) => {
+        (el as HTMLElement).style.setProperty('display', 'none', 'important');
+      });
+    };
+    hideNativeCloseButton();
+    const observer = new MutationObserver(hideNativeCloseButton);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [selectedLocationId]);
+
   // Keyed by location_id so the InfoWindow (see below) can anchor itself to
   // the actual marker DOM element rather than a raw lat/lng -- letting
   // Google compute the tail's pixel offset from the marker's real rendered
@@ -477,9 +501,31 @@ function MapContent({ locations, userCoords, searchBounds, boundaryPolygon, boun
                 distance and phone sharing a row instead of a paragraph
                 each -- shorter card, same information. */}
             <div className="p-1.5 min-w-[190px] max-w-[240px]">
-              <h3 className="font-semibold text-navy-800 mb-1 text-sm leading-snug">
-                {location.organization?.organization_name}
-              </h3>
+              {/* Google's own InfoWindow close button is hidden globally
+                  (see index.css) -- it reserves a fixed area at the
+                  top-right regardless of our content, floating well above
+                  the title with no way to align it. This custom button
+                  sits in the same flex row as the name instead, top-
+                  aligned with its first line (items-start) rather than
+                  vertically centered against the full (possibly
+                  two-line) height, and never overlaps the text since it
+                  has its own flex-shrink-0 column and the title has
+                  right-padding reserved for it. */}
+              <div className="flex items-start justify-between gap-1.5 mb-1">
+                <h3 className="font-semibold text-navy-800 text-sm leading-snug">
+                  {location.organization?.organization_name}
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setSelectedLocationId(null)}
+                  aria-label="Close"
+                  className="flex-shrink-0 text-neutral-400 hover:text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-200 rounded"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                    <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
+                  </svg>
+                </button>
+              </div>
               {location.service_types && location.service_types.length > 0 && (
                 <div className="flex flex-wrap gap-1 mb-1.5">
                   {location.service_types.map((st) => (

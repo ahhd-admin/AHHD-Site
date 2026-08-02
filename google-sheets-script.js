@@ -123,6 +123,22 @@ function doPost(e) {
       return jsonResponse_({ ok: true, action: "notify_failure" });
     }
 
+    // Whole-workflow failures use notify_failure above (a GitHub Actions
+    // step that fires on `if: failure()`), but that never covers an
+    // otherwise-successful run where individual ROWS still had a real
+    // problem -- a geocode that came back empty (see geocode_helper.py's
+    // geocode_status="failed"), or a location the merge RPC had to skip
+    // outright (locations_skipped, see the merge_google_sheets_data
+    // migrations). Called directly from run_scraper_and_merge.py after
+    // write_to_supabase_direct() returns its totals, independent of
+    // whether Google Sheets writes are even connected (they're currently
+    // disconnected -- see MVP-Rollout-Roadmap.md -- so this can't depend
+    // on that path the way sendCompletionEmail_ does).
+    if (action === "notify_row_issues") {
+      sendRowIssuesEmail_(payload);
+      return jsonResponse_({ ok: true, action: "notify_row_issues" });
+    }
+
     return jsonResponse_({
       ok: false,
       error: "Unknown action",
@@ -270,6 +286,74 @@ function sendFailureEmail_(failureInfo) {
     MailApp.sendEmail(recipient, subject, body);
   } catch (emailErr) {
     console.error("sendFailureEmail_ failed: " + String(emailErr));
+  }
+}
+
+// One provider's full detail block for the row-issues email -- every
+// field we actually have on file for it, not just name+address, plus the
+// specific reason (a.issue) this particular row didn't go live. Both
+// geocode-failure samples (from geocode_helper.py's geocode_failures.json)
+// and skipped-duplicate samples (from the merge RPC's skipped_details)
+// share this same shape.
+function formatRowIssueDetail_(a) {
+  const lines = [
+    `  * ${a.provider_name || "[unknown provider]"}${a.dba_name ? ` (DBA: ${a.dba_name})` : ""}`,
+    `    Problem: ${a.issue || "unspecified"}`,
+    `    Address: ${a.street_address || "?"}, ${a.city || "?"} ${a.state || "?"} ${a.zip || "?"}`,
+  ];
+  if (a.phone) lines.push(`    Phone: ${a.phone}`);
+  if (a.website) lines.push(`    Website: ${a.website}`);
+  if (a.achc_company_id) lines.push(`    ACHC company ID: ${a.achc_company_id}`);
+  if (a.source_url) lines.push(`    ACHC source page: ${a.source_url}`);
+  return lines.join("\n");
+}
+
+function sendRowIssuesEmail_(payload) {
+  const recipient = "jay@jayfox.design";
+  const geocodeFailed = payload.geocode_failed || 0;
+  const locationsSkipped = payload.locations_skipped || 0;
+  const totalIssues = geocodeFailed + locationsSkipped;
+
+  // Nothing to report -- shouldn't normally be called this way (the
+  // Python side only calls this action when there's actually something
+  // to flag), but skip silently rather than sending an empty "0 issues"
+  // email if it ever is.
+  if (totalIssues === 0) return;
+
+  const subject = `ACHC Scrape — ${totalIssues} row${totalIssues === 1 ? "" : "s"} need attention (${payload.run_id || "unknown run"})`;
+
+  const geocodeSamples = Array.isArray(payload.geocode_failed_samples) ? payload.geocode_failed_samples : [];
+  const skippedSamples = Array.isArray(payload.skipped_details) ? payload.skipped_details : [];
+
+  const bodyParts = [
+    `The ACHC scraper run otherwise completed successfully, but ${totalIssues} row(s) had an issue that kept them from going fully live:`,
+    ``,
+    `Geocoding failures (won't appear on the map until resolved): ${geocodeFailed}`,
+    `Locations skipped (pre-existing duplicate-data conflict): ${locationsSkipped}`,
+    ``,
+  ];
+
+  if (geocodeSamples.length > 0) {
+    bodyParts.push(`GEOCODING FAILURES (up to 15 shown; see review_queue_items in Supabase for the full list):`);
+    bodyParts.push(...geocodeSamples.slice(0, 15).map(formatRowIssueDetail_));
+    bodyParts.push(``);
+  }
+
+  if (skippedSamples.length > 0) {
+    bodyParts.push(`SKIPPED -- DUPLICATE DATA CONFLICT (up to 15 shown):`);
+    bodyParts.push(...skippedSamples.slice(0, 15).map(formatRowIssueDetail_));
+    bodyParts.push(``);
+  }
+
+  bodyParts.push(`Run ID: ${payload.run_id || "unknown"}`);
+  bodyParts.push(`GitHub Run ID: ${payload.github_run_id || "unknown"}`);
+
+  const body = bodyParts.join("\n");
+
+  try {
+    MailApp.sendEmail(recipient, subject, body);
+  } catch (emailErr) {
+    console.error("sendRowIssuesEmail_ failed: " + String(emailErr));
   }
 }
 

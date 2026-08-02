@@ -14,20 +14,17 @@ export function getVerifiedDate(location: {
   return location.source_last_seen_at || location.updated_at || location.last_verified_at || null;
 }
 
-const RECENT_THRESHOLD_DAYS = 3;
-
 export function formatVerifiedDate(dateString: string | null | undefined): string | null {
   if (!dateString) return null;
   const date = new Date(dateString);
   if (Number.isNaN(date.getTime())) return null;
 
-  // "Last verified:" instead of just "Verified" -- reads as a live,
-  // computed status (this listing was actually re-checked) rather than
-  // static copy baked into the page.
-  const daysAgo = Math.floor((Date.now() - date.getTime()) / (1000 * 60 * 60 * 24));
-  if (daysAgo <= 0) return 'Last verified: today';
-  if (daysAgo === 1) return 'Last verified: yesterday';
-  if (daysAgo <= RECENT_THRESHOLD_DAYS) return `Last verified: ${daysAgo} days ago`;
-
+  // Always an explicit calendar date, not relative phrasing ("yesterday",
+  // "3 days ago") -- an exact date reads as a verifiable fact a visitor
+  // can check for themselves; "yesterday" reads as vaguer, and stays
+  // exactly as vague however long the underlying data actually goes
+  // unrefreshed (worth being precise about, since the nightly scraper
+  // pipeline that's meant to keep this current isn't live yet as of
+  // 2026-08-01 -- see MVP-Rollout-Roadmap.md).
   return `Last verified: ${date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
 }

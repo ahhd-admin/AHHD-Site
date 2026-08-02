@@ -17,6 +17,17 @@ from dotenv import load_dotenv
 load_dotenv()
 
 CACHE_FILE = "geocode_cache.json"
+# One-time seed: every address already geocoded in Supabase (from the
+# original populate_mvp_supabase.py pass), exported so the FIRST live run
+# of this pipeline doesn't start from an empty cache and waste budget
+# re-geocoding ~23k addresses that already have real coordinates on file.
+# The GitHub Actions cache for CACHE_FILE only gets populated once a real
+# run actually calls save_cache() below -- before that, this is the only
+# thing standing between a fresh cache and a very expensive first run.
+# Safe to leave in place permanently: once CACHE_FILE exists (which it
+# will, from here on), load_cache() below prefers it and never touches
+# this seed again.
+SEED_CACHE_FILE = "geocode_cache_seed.json"
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
 GEOCODE_CONCURRENCY = int(os.getenv("GEOCODE_CONCURRENCY", "5"))
 # Optional extra cap on new (uncached) API calls in a single run, independent
@@ -82,6 +93,11 @@ def load_cache() -> dict:
     if os.path.exists(CACHE_FILE):
         with open(CACHE_FILE, "r", encoding="utf-8-sig") as f:  # utf-8-sig strips BOM if present
             return json.load(f)
+    if os.path.exists(SEED_CACHE_FILE):
+        with open(SEED_CACHE_FILE, "r", encoding="utf-8-sig") as f:
+            seed = json.load(f)
+        print(f"No persisted geocode_cache.json yet -- starting from the {len(seed)}-address seed instead of empty.")
+        return seed
     return {}
 
 
@@ -309,11 +325,15 @@ async def geocode_locations(locations: list) -> list:
         import json as _json
         with open("geocode_failures.json", "w", encoding="utf-8") as _f:
             _json.dump([{
+                "issue": "Geocoding failed -- no lat/lng, won't appear on the map or in state/city searches until resolved",
                 "provider_name": l.get("provider_name"),
+                "dba_name": l.get("dba_name"),
                 "street_address": l.get("street_address"),
                 "city": l.get("city"),
                 "state": l.get("state"),
                 "zip": l.get("zip"),
+                "phone": l.get("phone"),
+                "website": l.get("website"),
                 "achc_company_id": l.get("achc_company_id"),
                 "source_url": l.get("source_url"),
             } for l in failed], _f, indent=2)

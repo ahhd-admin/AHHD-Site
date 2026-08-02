@@ -42,13 +42,25 @@ jobs:
             geocode-cache-
 
       # Note: normalization logic is unit-tested separately in the test-normalization workflow
-      # MVP-SCOPE DIAGNOSTIC: scrape only the three home-based-care programs
-      # (Home Care, Home Health, Hospice) to see the real deduplicated count
-      # for the site's actual content focus. Zero cost -- geocoding/Supabase/
-      # Sheets all off, this only scrapes/normalizes/reports. Also dumps the
-      # full normalized list to a JSON artifact for manual sampling/testing
-      # (e.g. the website-search-link accuracy test) -- remove DUMP_NORMALIZED_JSON_PATH
-      # and the upload-artifact step below once that's no longer needed.
+      # MVP scope: scrape only the three home-based-care programs (Home
+      # Care, Home Health, Hospice) -- the site's actual content focus.
+      #
+      # 2026-08-01: promoted from the MVP-scope diagnostic (geocoding/
+      # Supabase writes both off, report-only) to a real live run.
+      # Confirmed via GitHub Actions run history that every night up to
+      # this point completed "successfully" while writing nothing --
+      # ENABLE_GEOCODING/ENABLE_DIRECT_SUPABASE were hardcoded false, so
+      # the site's live data was frozen at whatever populate_mvp_supabase.py
+      # (a one-time manual local run) last wrote, not actually kept
+      # current by this "daily" workflow. geocode_helper.py's dedup +
+      # monthly-budget-cap mechanism (GEOCODE_MONTHLY_BUDGET, default
+      # 9500, well under Google's free tier) was reviewed and is sound,
+      # so this is now a real nightly refresh, self-throttled to stay
+      # inside the free tier. ENABLE_WEBSITE_ENRICHMENT stays off
+      # deliberately -- that's the Places API path, replaced by the
+      # search-deep-link approach (see MVP-Rollout-Roadmap.md), unrelated
+      # to this change and still subject to its own required double
+      # confirmation before ever being turned on.
       - name: Run ACHC scraper and write raw + merged tabs
         working-directory: ./scrapers
         env:
@@ -57,9 +69,11 @@ jobs:
           TEST_PROGRAMS: "Home Care,Home Health,Hospice"
           SCRAPER_SECRET: ${{ secrets.SCRAPER_SECRET }}
           GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
-          ENABLE_GEOCODING: "false"
+          ENABLE_GEOCODING: "true"
           ENABLE_WEBSITE_ENRICHMENT: "false"
-          ENABLE_DIRECT_SUPABASE: "false"
+          ENABLE_DIRECT_SUPABASE: "true"
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           DUMP_NORMALIZED_JSON_PATH: "normalized_dump.json"
         run: |
           python run_scraper_and_merge.py
