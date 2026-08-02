@@ -23,9 +23,17 @@ export default function ProviderCard({ location, distance }: ProviderCardProps) 
   // organization name for essentially every record (real DBA/"doing
   // business as" names haven't been extracted yet -- see
   // MVP-Rollout-Roadmap.md), so showing both lines just repeats the same
-  // text. Only show it once it's genuinely a different name.
+  // text. Only show it once it's genuinely a different name -- compared
+  // with punctuation/spacing/case normalized out (confirmed live: cards
+  // were showing both lines for names differing only by a comma, e.g.
+  // "Matrix Home Care, LLC" vs "Matrix Home Care LLC", which reads as a
+  // real second name rather than the same one copied with a formatting
+  // difference).
+  const normalizeForComparison = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
   const hasDistinctLocationName =
-    location.location_name && location.location_name !== location.organization?.organization_name;
+    location.location_name &&
+    normalizeForComparison(location.location_name) !==
+      normalizeForComparison(location.organization?.organization_name || '');
 
   return (
     <a
