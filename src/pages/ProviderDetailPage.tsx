@@ -173,17 +173,15 @@ export default function ProviderDetailPage({ locationId }: ProviderDetailPagePro
             <div className="lg:col-span-2 space-y-8">
               {isEnhanced && enhancedDescription && (
                 <section className="card p-8 bg-gradient-to-br from-amber-50 to-amber-100 border-2 border-amber-200">
-                  <div className="flex items-start gap-3 mb-4">
-                    <Star className="w-6 h-6 text-amber-600 fill-current flex-shrink-0 mt-1" />
-                    <div>
-                      <h2 className="text-2xl font-heading font-semibold text-navy-800 mb-3">
-                        About This Provider
-                      </h2>
-                      <p className="text-neutral-800 leading-relaxed text-base">
-                        {enhancedDescription}
-                      </p>
-                    </div>
+                  <div className="flex items-center gap-3 mb-3">
+                    <Star className="w-6 h-6 text-amber-600 fill-current flex-shrink-0" />
+                    <h2 className="text-2xl font-heading font-semibold text-navy-800">
+                      About This Provider
+                    </h2>
                   </div>
+                  <p className="text-neutral-800 leading-relaxed text-base">
+                    {enhancedDescription}
+                  </p>
                 </section>
               )}
 
