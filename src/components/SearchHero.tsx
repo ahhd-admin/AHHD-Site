@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { APIProvider, useMapsLibrary } from '@vis.gl/react-google-maps';
 import MapSearch from './MapSearch';
 import ProviderCard from './ProviderCard';
+import TrustStats from './TrustStats';
 import { supabase } from '../lib/supabase';
 import type { LocationWithDetails } from '../types/database';
 import { calculateDistance } from '../lib/geoUtils';
@@ -1522,6 +1523,8 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             Search accredited home care, hospice, and healthcare services in your area
           </p>
         </div>
+
+        <TrustStats />
 
         <div className="flex flex-col lg:flex-row gap-4">
           <div className="w-full lg:w-[300px] lg:flex-shrink-0">

@@ -2,6 +2,7 @@ import Header from '../components/Header';
 import Footer from '../components/Footer';
 import SearchHero from '../components/SearchHero';
 import HowItWorks from '../components/HowItWorks';
+import ClosingCTA from '../components/ClosingCTA';
 import { Award, Heart } from 'lucide-react';
 
 export default function HomePage() {
@@ -57,7 +58,7 @@ export default function HomePage() {
           </div>
         </section>
 
-
+        <ClosingCTA />
       </main>
 
       <Footer />
