@@ -1388,7 +1388,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             </div>
             <p className="font-semibold text-navy-800 text-sm">Where are you looking for care?</p>
           </div>
-          <p className="text-xs text-neutral-600 mt-0.5">Enter a state, address, or ZIP code.</p>
+          <p className="text-xs text-neutral-600 mt-0.5">Enter a city, state, address, or ZIP code.</p>
         </div>
       )}
 
@@ -1649,18 +1649,6 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
                 </div>
               )}
 
-              {/* Short, contextual version of the disclaimer -- right where
-                  someone's actually looking at results, not buried in a
-                  big standalone box further down the page (see
-                  HowItWorks.tsx and ProviderDetailPage.tsx's "About This
-                  Directory" box, which carries the fuller version at the
-                  point someone's looking at one specific provider). */}
-              {hasSubmittedSearch && !(loading && filteredLocations.length === 0) && (
-                <p className="px-4 py-1.5 text-xs text-neutral-600 border-b border-neutral-200 bg-neutral-50">
-                  AHHD doesn't endorse specific providers. Always verify accreditation and other details directly with them.
-                </p>
-              )}
-
               {hasSubmittedSearch && autoExpandNotice && !(loading && filteredLocations.length === 0) && (
                 // amber-800 on amber-50 measures 6.84:1 (clears AA) -- a
                 // noticeably different tone from the neutral results
@@ -1687,11 +1675,23 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
                   <span className="sr-only">Loading search results…</span>
                 </div>
               ) : viewMode === 'list' && hasSubmittedSearch ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 min-h-[500px] bg-neutral-50 animate-fade-in-up">
-                  {filteredLocations.map((loc) => (
-                    <ProviderCard key={loc.location_id} location={loc} />
-                  ))}
-                </div>
+                <>
+                  {/* Sits directly above the provider list itself (not up
+                      by the results-count/Map-Grid header) -- right before
+                      someone starts tapping into individual providers,
+                      which is the point it actually matters. Map view's
+                      equivalent list (MapSearch.tsx's ResultsList, below
+                      the map) carries the same line in the same spot
+                      relative to its own list. */}
+                  <p className="px-4 py-1.5 text-xs text-neutral-600 border-b border-neutral-200 bg-neutral-50">
+                    AHHD doesn't endorse specific providers. Always verify accreditation and other details directly with them.
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 min-h-[500px] bg-neutral-50 animate-fade-in-up">
+                    {filteredLocations.map((loc) => (
+                      <ProviderCard key={loc.location_id} location={loc} />
+                    ))}
+                  </div>
+                </>
               ) : (
                 // The animation class goes on this wrapper, not inside
                 // MapSearch itself -- it's a paint-only transform/opacity

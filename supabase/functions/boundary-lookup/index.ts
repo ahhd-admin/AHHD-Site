@@ -22,41 +22,98 @@ const NOMINATIM_USER_AGENT =
 // Nominatim boundaries can run to several thousand points (Chicago's is
 // ~3800) -- far more than needed for a smooth-looking outline at any
 // zoom level a visitor would realistically use, and needlessly heavy to
-// transfer and render. Simple decimation (not true Douglas-Peucker
-// simplification, which needs a dedicated library) keeps the response
-// small while still tracing the real shape.
-const MAX_POINTS_PER_RING = 400;
+// transfer and render. Raised from 400 (2026-08-02): confirmed live
+// that 400 was still visibly too coarse along a shared state border --
+// part of Oklahoma's traced edge cut into Texas instead of following
+// the real line between them. Real Douglas-Peucker (see below) makes
+// this a genuine quality/size tradeoff now rather than a bug either
+// value would still have -- 1000 gives noticeably more fidelity along
+// long shared borders while staying well under the ~3800 raw point
+// count of the most complex real shapes.
+const MAX_POINTS_PER_RING = 1000;
 
-// Confirmed live (2026-08-02): plain every-Nth-index decimation silently
-// dropped Texas's panhandle tip -- its northmost point just didn't happen
-// to land on a kept index, so the traced outline was missing roughly the
-// top 50 miles of the state. Any thin protrusion (a panhandle, a narrow
-// peninsula) is at risk of the same thing regardless of which state/city
-// it belongs to, since "every Nth point" has no idea which points matter
-// shape-wise. Fix: find the 4 extrema (north/south/east/west-most points)
-// first and guarantee they survive decimation, in addition to the regular
-// evenly-spaced sample -- keeps the same output size in the common case
-// while no longer being able to silently amputate a real protruding
-// feature.
+// History of two wrong attempts at this before landing on real
+// Douglas-Peucker simplification, both confirmed live against Texas's
+// panhandle:
+//
+// 1. Plain every-Nth-index decimation dropped the panhandle tip
+//    entirely -- its northmost point just didn't happen to land on a
+//    kept index.
+// 2. Fixing #1 by force-keeping the 4 global extrema (north/south/east/
+//    west-most points) stopped the tip from vanishing, but the
+//    panhandle's actual RECTANGULAR shape still came out wrong -- one
+//    top corner survived (it happened to be the true northmost point),
+//    but the other top corner is a separate vertex nowhere near the
+//    global north/south/east/west extremes, so it kept getting
+//    decimated away, leaving a single sharp point instead of a flat
+//    top edge.
+//
+// Global extrema can never fix this class of bug -- a shape's
+// significant vertices (corners, protrusions) aren't necessarily the
+// polygon's overall min/max points. Real Douglas-Peucker simplification
+// (recursively keeping whichever point deviates most from the current
+// simplified line, for every subsegment, not just the 4 global
+// extremes) is the actual correct algorithm for this and is what should
+// have been used from the start.
+function perpendicularDistance(point: number[], lineStart: number[], lineEnd: number[]): number {
+  const [px, py] = point;
+  const [x1, y1] = lineStart;
+  const [x2, y2] = lineEnd;
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  if (dx === 0 && dy === 0) {
+    return Math.hypot(px - x1, py - y1);
+  }
+  const t = ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy);
+  const closestX = x1 + t * dx;
+  const closestY = y1 + t * dy;
+  return Math.hypot(px - closestX, py - closestY);
+}
+
+function douglasPeucker(points: number[][], epsilon: number): number[][] {
+  if (points.length < 3) return points;
+  let maxDist = 0;
+  let index = 0;
+  const end = points.length - 1;
+  for (let i = 1; i < end; i++) {
+    const dist = perpendicularDistance(points[i], points[0], points[end]);
+    if (dist > maxDist) {
+      maxDist = dist;
+      index = i;
+    }
+  }
+  if (maxDist > epsilon) {
+    const left = douglasPeucker(points.slice(0, index + 1), epsilon);
+    const right = douglasPeucker(points.slice(index), epsilon);
+    return left.slice(0, -1).concat(right);
+  }
+  return [points[0], points[end]];
+}
+
+// Douglas-Peucker's epsilon (max allowed deviation) doesn't map directly
+// to an output point count, so binary-search it until the result is at
+// or under the target -- guarantees the size cap while still using real
+// shape-aware simplification rather than index-based sampling.
 function thinRing(points: number[][]): number[][] {
   if (points.length <= MAX_POINTS_PER_RING) return points;
 
-  const step = Math.ceil(points.length / MAX_POINTS_PER_RING);
-  const keepIndices = new Set<number>();
-  for (let i = 0; i < points.length; i += step) keepIndices.add(i);
-  keepIndices.add(points.length - 1);
+  let lo = 0;
+  let hi = 5; // degrees -- far larger than any single ring would ever need
+  let best = douglasPeucker(points, hi);
 
-  let nIdx = 0, sIdx = 0, eIdx = 0, wIdx = 0;
-  for (let i = 1; i < points.length; i++) {
-    const [lng, lat] = points[i];
-    if (lat > points[nIdx][1]) nIdx = i;
-    if (lat < points[sIdx][1]) sIdx = i;
-    if (lng > points[eIdx][0]) eIdx = i;
-    if (lng < points[wIdx][0]) wIdx = i;
+  for (let iter = 0; iter < 20; iter++) {
+    const mid = (lo + hi) / 2;
+    const result = douglasPeucker(points, mid);
+    if (result.length > MAX_POINTS_PER_RING) {
+      lo = mid;
+    } else {
+      hi = mid;
+      best = result;
+    }
+    if (hi - lo < 1e-6) break;
   }
-  keepIndices.add(nIdx).add(sIdx).add(eIdx).add(wIdx);
 
-  return [...keepIndices].sort((a, b) => a - b).map((i) => points[i]);
+  return best;
 }
 
 Deno.serve(async (req: Request) => {

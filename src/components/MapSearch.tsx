@@ -631,12 +631,18 @@ function ResultsList({ locations, hoveredLocationId, setHoveredLocationId }: Res
 
   return (
     <div className="mt-4 bg-neutral-50 rounded-lg p-3 md:p-4 max-h-80 md:max-h-96 overflow-y-auto">
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between mb-1">
         <h3 className="font-semibold text-navy-800 text-sm md:text-base">
           {locations.length} {locations.length === 1 ? 'Provider' : 'Providers'}
         </h3>
         <p className="text-xs text-neutral-500">Tap to view</p>
       </div>
+      {/* Same line, same position relative to its own list, as the Grid
+          view's equivalent in SearchHero.tsx -- right above the list
+          someone's about to tap into, not up by the map/header area. */}
+      <p className="text-xs text-neutral-600 mb-3">
+        AHHD doesn't endorse specific providers. Always verify accreditation and other details directly with them.
+      </p>
       <div className="space-y-2">
         {locations.map((location) => (
           <button
