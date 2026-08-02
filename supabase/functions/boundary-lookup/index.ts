@@ -27,13 +27,36 @@ const NOMINATIM_USER_AGENT =
 // small while still tracing the real shape.
 const MAX_POINTS_PER_RING = 400;
 
+// Confirmed live (2026-08-02): plain every-Nth-index decimation silently
+// dropped Texas's panhandle tip -- its northmost point just didn't happen
+// to land on a kept index, so the traced outline was missing roughly the
+// top 50 miles of the state. Any thin protrusion (a panhandle, a narrow
+// peninsula) is at risk of the same thing regardless of which state/city
+// it belongs to, since "every Nth point" has no idea which points matter
+// shape-wise. Fix: find the 4 extrema (north/south/east/west-most points)
+// first and guarantee they survive decimation, in addition to the regular
+// evenly-spaced sample -- keeps the same output size in the common case
+// while no longer being able to silently amputate a real protruding
+// feature.
 function thinRing(points: number[][]): number[][] {
   if (points.length <= MAX_POINTS_PER_RING) return points;
+
   const step = Math.ceil(points.length / MAX_POINTS_PER_RING);
-  const thinned = points.filter((_, i) => i % step === 0);
-  const last = points[points.length - 1];
-  if (thinned[thinned.length - 1] !== last) thinned.push(last);
-  return thinned;
+  const keepIndices = new Set<number>();
+  for (let i = 0; i < points.length; i += step) keepIndices.add(i);
+  keepIndices.add(points.length - 1);
+
+  let nIdx = 0, sIdx = 0, eIdx = 0, wIdx = 0;
+  for (let i = 1; i < points.length; i++) {
+    const [lng, lat] = points[i];
+    if (lat > points[nIdx][1]) nIdx = i;
+    if (lat < points[sIdx][1]) sIdx = i;
+    if (lng > points[eIdx][0]) eIdx = i;
+    if (lng < points[wIdx][0]) wIdx = i;
+  }
+  keepIndices.add(nIdx).add(sIdx).add(eIdx).add(wIdx);
+
+  return [...keepIndices].sort((a, b) => a - b).map((i) => points[i]);
 }
 
 Deno.serve(async (req: Request) => {
