@@ -31,7 +31,14 @@ export default function HomePage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div className="card p-8">
                 <div className="flex items-center gap-3 mb-3">
-                  <Award className="w-7 h-7 text-primary-600 flex-shrink-0" />
+                  {/* Circle-badge icon treatment, matching TrustStats --
+                      the icon sits inline beside the heading here (not
+                      stacked above it like HowItWorks' 3-step cards), so
+                      TrustStats' inline badge is the structural match,
+                      just scaled for a card heading instead of a stat. */}
+                  <div className="w-11 h-11 md:w-12 md:h-12 bg-primary-100 rounded-full flex items-center justify-center flex-shrink-0">
+                    <Award className="w-5 h-5 md:w-6 md:h-6 text-primary-600" />
+                  </div>
                   <h3 className="text-xl font-heading font-semibold text-navy-800">
                     What is Accreditation?
                   </h3>
@@ -43,7 +50,9 @@ export default function HomePage() {
 
               <div className="card p-8">
                 <div className="flex items-center gap-3 mb-3">
-                  <Heart className="w-7 h-7 text-success-600 flex-shrink-0" />
+                  <div className="w-11 h-11 md:w-12 md:h-12 bg-success-100 rounded-full flex items-center justify-center flex-shrink-0">
+                    <Heart className="w-5 h-5 md:w-6 md:h-6 text-success-600" />
+                  </div>
                   <h3 className="text-xl font-heading font-semibold text-navy-800">
                     Why It Matters
                   </h3>
