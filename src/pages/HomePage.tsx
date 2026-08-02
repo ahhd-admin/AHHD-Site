@@ -29,35 +29,27 @@ export default function HomePage() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div className="card p-8">
-                <div className="flex items-start gap-4">
-                  <div className="flex-shrink-0">
-                    <Award className="w-10 h-10 text-primary-600" />
-                  </div>
-                  <div>
-                    <h3 className="text-xl font-heading font-semibold text-navy-800 mb-3">
-                      What is Accreditation?
-                    </h3>
-                    <p className="text-neutral-700 leading-relaxed">
-                      Accreditation is a voluntary process where healthcare organizations are evaluated by independent accreditation bodies to confirm they meet recognized standards for care quality, patient safety, and operations. The providers listed on this site are accredited by ACHC (Accreditation Commission for Health Care), an independent, nonprofit organization that accredits home health, hospice, and other in-home care providers.
-                    </p>
-                  </div>
+                <div className="flex items-center gap-3 mb-3">
+                  <Award className="w-7 h-7 text-primary-600 flex-shrink-0" />
+                  <h3 className="text-xl font-heading font-semibold text-navy-800">
+                    What is Accreditation?
+                  </h3>
                 </div>
+                <p className="text-neutral-700 leading-relaxed">
+                  Accreditation is a voluntary process where healthcare organizations are evaluated by independent accreditation bodies to confirm they meet recognized standards for care quality, patient safety, and operations. The providers listed on this site are accredited by ACHC (Accreditation Commission for Health Care), an independent, nonprofit organization that accredits home health, hospice, and other in-home care providers.
+                </p>
               </div>
 
               <div className="card p-8">
-                <div className="flex items-start gap-4">
-                  <div className="flex-shrink-0">
-                    <Heart className="w-10 h-10 text-success-600" />
-                  </div>
-                  <div>
-                    <h3 className="text-xl font-heading font-semibold text-navy-800 mb-3">
-                      Why It Matters
-                    </h3>
-                    <p className="text-neutral-700 leading-relaxed">
-                      Choosing an accredited provider means choosing an organization that has been reviewed by an independent body and found to meet recognized standards. It provides an additional layer of assurance during important care decisions.
-                    </p>
-                  </div>
+                <div className="flex items-center gap-3 mb-3">
+                  <Heart className="w-7 h-7 text-success-600 flex-shrink-0" />
+                  <h3 className="text-xl font-heading font-semibold text-navy-800">
+                    Why It Matters
+                  </h3>
                 </div>
+                <p className="text-neutral-700 leading-relaxed">
+                  Choosing an accredited provider means choosing an organization that has been reviewed by an independent body and found to meet recognized standards. It provides an additional layer of assurance during important care decisions.
+                </p>
               </div>
             </div>
 
