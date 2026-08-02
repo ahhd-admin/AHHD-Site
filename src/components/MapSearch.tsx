@@ -261,19 +261,24 @@ function MapContent({ locations, userCoords, searchBounds, boundaryPolygon, boun
       // yet (the fetch is still in flight when this first runs), this
       // stays unlocked so the effect can re-fit tightly once they arrive.
       if (!hasFitWithMarkersRef.current) {
-        // Google's official state/region boundary is often much bigger
-        // than where any actual result is -- Hawaii's includes the
-        // uninhabited Northwestern Hawaiian Islands out past -178, which
-        // pulls the boundary's center into open ocean, nowhere near the
-        // populated islands the results are actually on. Fitting to the
-        // real result coordinates instead centers on where the data
-        // actually is, and incidentally crops in tighter for states like
-        // Alaska/Illinois whose bounding rectangle has a lot of empty
-        // corner area no result ever falls inside. searchBounds is only
-        // the fallback now, for a region with zero matching results (or
-        // exactly one, where a bare point isn't a useful "fit").
+        const isStateSearch = searchRegionScale === 'state';
         const bounds = new google.maps.LatLngBounds();
-        if (locationsWithCoords.length > 1) {
+
+        if (isStateSearch) {
+          // A state search should show the state's own real extent,
+          // filling as much of the frame as possible -- not crop to
+          // wherever the actual matching results happen to cluster.
+          // Confirmed live: Alaska with only 2 results near Anchorage was
+          // fitting tight to just those 2 points, hiding the rest of the
+          // state entirely, which reads as broken for a state-level
+          // search regardless of how few/clustered the real results are.
+          bounds.extend({ lat: searchBounds.south, lng: searchBounds.west });
+          bounds.extend({ lat: searchBounds.north, lng: searchBounds.east });
+        } else if (locationsWithCoords.length > 1) {
+          // Below state scale (city/zip/address), fitting to the real
+          // result coordinates instead of the searched region's own
+          // bounds centers on where the data actually is and crops in
+          // tighter than the region's raw extent would.
           locationsWithCoords.forEach((loc) => {
             bounds.extend({ lat: loc.latitude!, lng: loc.longitude! });
           });
@@ -289,17 +294,13 @@ function MapContent({ locations, userCoords, searchBounds, boundaryPolygon, boun
         }
 
         if (!bounds.isEmpty()) {
-          // Marker-only bounds hug whatever's outermost, which for a
-          // state where results don't happen to reach every edge (e.g.
-          // no provider right at Illinois's northern or southern tip)
-          // reads as the state itself being cropped, not just a tight
-          // fit. A proportional buffer (not a fixed political boundary --
-          // that's what caused the Hawaii-in-the-ocean bug) gives some
-          // breathing room past the outermost real markers, sized to the
-          // cluster's own extent so it scales sensibly for both a tiny
-          // single-city search and a whole-state one. The floor (~3-4
-          // miles) keeps a small local cluster from staying zoomed to a
-          // single block.
+          // A proportional buffer (not a fixed political boundary --
+          // that's what caused the Hawaii-remote-islands-in-the-ocean bug
+          // this fit logic used to have) gives some breathing room past
+          // the target bounds, sized to their own extent so it scales
+          // sensibly whether that's a tiny single-city search or a
+          // whole-state one. The floor (~3-4 miles) keeps a small local
+          // cluster from staying zoomed to a single block.
           const ne = bounds.getNorthEast();
           const sw = bounds.getSouthWest();
           const latBuffer = Math.max((ne.lat() - sw.lat()) * 0.12, 0.05);
@@ -308,6 +309,27 @@ function MapContent({ locations, userCoords, searchBounds, boundaryPolygon, boun
           bounds.extend({ lat: sw.lat() - latBuffer, lng: sw.lng() - lngBuffer });
 
           map.fitBounds(bounds, { top: 40, right: 56, bottom: 40, left: 56 });
+
+          // fitBounds tends to leave real breathing room past the buffer
+          // above -- Google rounds down to a zoom level that fully
+          // contains the target box, not the closest one. One extra step
+          // in ("when possible" -- capped, so a single-marker search
+          // doesn't zoom in past street level) reads noticeably tighter
+          // and more "found it" without needing to touch the bounds/
+          // buffer math itself. Skipped for a state search -- "fill the
+          // frame with the whole state" is the opposite goal of "zoom in
+          // one more level," and the state's own bounds above are already
+          // sized to fit it, not to some other region's extent. fitBounds
+          // settles asynchronously, so this has to wait for 'idle' rather
+          // than reading getZoom() right after the call.
+          if (!isStateSearch) {
+            google.maps.event.addListenerOnce(map, 'idle', () => {
+              const settledZoom = map.getZoom();
+              if (typeof settledZoom === 'number') {
+                map.setZoom(Math.min(settledZoom + 1, 15));
+              }
+            });
+          }
 
           if (locationsWithCoords.length > 0) {
             // Fit real markers, not just the searched region's own

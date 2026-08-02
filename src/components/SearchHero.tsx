@@ -218,6 +218,12 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   // submit time to decide whether a real boundary trace should even be
   // attempted (see shouldTraceBoundary below).
   const lastGeocodeScaleRef = useRef<'state' | 'city' | 'zip' | 'address' | undefined>(undefined);
+  // The location text handleSearch last actually geocoded/fit the camera
+  // to -- lets a re-click of Search with the SAME text (just refining
+  // Type of Care/Radius and clicking Search again instead of waiting for
+  // the debounced auto-refresh) skip the camera re-fit entirely, instead
+  // of treating every click as a brand new search. See handleSearch.
+  const lastSearchedLocationRef = useRef<string | null>(null);
   // Shows/hides the licensing/insurance note next to "Confine to state
   // only" -- a hover-or-tap popover (not a native title tooltip, which
   // doesn't work on touch) explaining why crossing state lines matters.
@@ -793,7 +799,21 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
     coords: { lat: number; lng: number };
     boundary: BoundaryGeoJSON;
   } | null> => {
-    const stateCode = resolveStateCode(searchText.split(',')[0].trim());
+    // Strips the synthetic "[State] (entire state)" suggestion's own
+    // suffix (see DIRECT_STATE_PLACE_ID_PREFIX below) before resolving --
+    // without this, resolveStateCode never matched "New York (entire
+    // state)" against "new york", silently returned null, and every
+    // direct-state-match selection fell through to Google's geocoder
+    // instead, which (confirmed live) resolves multi-word state names
+    // like "New York" to the CITY rather than the state -- the exact
+    // same city/state ambiguity this direct-match path exists to avoid
+    // in the first place. Single-word states (Texas, Alaska) happened to
+    // still geocode to something reasonable via that fallback, which is
+    // why this went unnoticed until a state search that specifically
+    // needed the real state shape (not just a plausible-looking point)
+    // was checked closely.
+    const withoutSuffix = searchText.replace(/\s*\(entire state\)\s*$/i, '');
+    const stateCode = resolveStateCode(withoutSuffix.split(',')[0].trim());
     if (!stateCode) return null;
     const boundary = await fetchStateBoundary(stateCode);
     if (!boundary) return null;
@@ -945,8 +965,32 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   const handleSearch = async () => {
     setShowSuggestions(false);
     if (!location.trim()) return;
+
+    // Re-clicking Search with the exact same location text as last time
+    // (refining Type of Care/Radius and hitting Search again, rather than
+    // waiting for the debounced auto-refresh) isn't a new search --
+    // confirmed live this was resetting the camera to the default fit
+    // every time, discarding any manual pan/zoom, even though nothing
+    // about WHERE was searched actually changed. Route it through the
+    // same refinement path Radius/"Confine to state" already use instead
+    // of the full new-search flow below.
+    if (
+      hasSubmittedSearch &&
+      userCoords !== null &&
+      lastSearchedLocationRef.current !== null &&
+      location.trim().toLowerCase() === lastSearchedLocationRef.current.toLowerCase()
+    ) {
+      const queryBounds =
+        searchRegionScale === 'state' && searchBounds
+          ? expandBoundsByMiles(searchBounds, distanceRadius)
+          : searchBounds;
+      loadLocations(location, ensureServicesSelected(), userCoords, queryBounds, searchRegionScale, distanceRadius, searchStateCode, confineToState);
+      return;
+    }
+
     setHasSubmittedSearch(true);
     setSearchGeneration((n) => n + 1);
+    lastSearchedLocationRef.current = location.trim();
 
     // Cleared immediately, not left showing until the new results land.
     // Two reasons: visually, the previous search's pins stayed on screen
@@ -1236,6 +1280,10 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             ) || data.results[0];
 
             setLocation(cityResult.formatted_address);
+            // Kept in sync with the text just set above so a later re-click
+            // of Search (unchanged text) is recognized as a same-location
+            // refinement instead of a new search -- see handleSearch.
+            lastSearchedLocationRef.current = cityResult.formatted_address.trim();
             // Not delegating to handleSearch() here -- setLocation() above
             // hasn't committed yet by the time a synchronous call would
             // read `location` from this closure, so it would search with
@@ -1321,18 +1369,23 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   // non-overlapping region, so there's no sizing/z-index tradeoff to make.
   const searchPanel = (
     <div className="bg-white rounded-2xl shadow-md border border-neutral-200 p-4">
-      {/* Gives the panel a landmark heading in both states -- without it,
-          the panel started cold with just the input once the pre-search
-          prompt below disappears after a search. neutral-600 measures
-          7.81:1 on white (AAA). */}
-      <h2 className="text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-2">
-        Find Care
-      </h2>
+      {/* Only shown once submitted -- "Where are you looking for care?"
+          below already serves as the panel's heading before that point,
+          so showing both together just repeated the same idea. This is
+          purely the landmark heading for the post-search state, once that
+          prompt disappears. neutral-600 measures 7.81:1 on white (AAA). */}
+      {hasSubmittedSearch && (
+        <h2 className="text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-2">
+          Find Care
+        </h2>
+      )}
 
       {!hasSubmittedSearch && (
         <div className="mb-3">
           <div className="flex items-center gap-2">
-            <MapPin className="w-5 h-5 text-navy-800 flex-shrink-0" />
+            <div className="w-9 h-9 bg-primary-100 rounded-full flex items-center justify-center flex-shrink-0">
+              <MapPin className="w-4 h-4 text-primary-600" />
+            </div>
             <p className="font-semibold text-navy-800 text-sm">Where are you looking for care?</p>
           </div>
           <p className="text-xs text-neutral-600 mt-0.5">Enter a state, address, or ZIP code</p>
