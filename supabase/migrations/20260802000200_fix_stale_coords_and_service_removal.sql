@@ -1,0 +1,377 @@
+/*
+  # Fix two silent-data-drift bugs in merge_google_sheets_data
+
+  Both found during a pre-launch architecture re-audit (2026-08-02),
+  cross-checking AHHD-Production-Synchronization-Strategy.md's P0-007
+  and P0-009 against the current live function.
+
+  1. P0-009 -- stale coordinates. The previous version always did
+     `latitude = COALESCE(v_lat, locations.latitude)`: if this run
+     didn't bring a fresh geocode (budget capped, API failure), the
+     OLD coordinates were kept no matter what. That's correct when the
+     address hasn't changed (better to show last-known coordinates
+     than nothing), but wrong when the address HAS changed -- the pin
+     would keep pointing at the provider's previous address instead of
+     going to "pending" until it's actually re-geocoded. Now compares
+     incoming address fields against what's on file first; only clears
+     coordinates to NULL/pending when the address changed AND no fresh
+     geocode came in this run.
+
+  2. P0-007 -- services only ever grew. The service-sync step only
+     ever INSERTed missing location_service_types rows, never removed
+     any -- a service ACHC actually revokes from a provider stayed
+     shown on the site forever. ACHC is the authoritative source for
+     what a location currently offers (see
+     AHHD-Production-Synchronization-Strategy.md's "Source of Truth"
+     principle), so each row's `services` field should now REPLACE the
+     linked set, not just add to it. Still a no-op when `services`
+     comes back empty/missing for a row, to avoid wiping real links on
+     a parsing gap rather than a genuine ACHC change.
+*/
+
+CREATE OR REPLACE FUNCTION merge_google_sheets_data(sheet_data jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  row_data            jsonb;
+  v_org_slug          text;
+  v_org_id            uuid;
+  v_location_id       uuid;
+  v_lat               numeric;
+  v_lon               numeric;
+  v_listing_status    public.listing_status;
+  v_achc_source_id    text;
+  v_services_raw      text;
+  v_service_name      text;
+  v_service_type_id   uuid;
+  v_confidence        text;
+  v_geocode_status    text;
+  v_existing_services text;
+  v_skip_row          boolean;
+  v_has_coords        boolean;
+
+  v_old_address_line_1 text;
+  v_old_city            text;
+  v_old_state           text;
+  v_old_postal_code     text;
+  v_old_lat             numeric;
+  v_old_lon             numeric;
+  v_address_changed     boolean;
+  v_effective_lat       numeric;
+  v_effective_lon       numeric;
+
+  c_orgs_inserted     int := 0;
+  c_orgs_updated      int := 0;
+  c_locs_inserted     int := 0;
+  c_locs_updated      int := 0;
+  c_locs_skipped      int := 0;
+  c_flagged           int := 0;
+  c_geocode_failed    int := 0;
+  c_skipped_details   jsonb := '[]'::jsonb;
+BEGIN
+
+  FOR row_data IN SELECT * FROM jsonb_array_elements(sheet_data)
+  LOOP
+
+    -- --------------------------------------------------------
+    -- A. Upsert organisation (explicit lookup, no ON CONFLICT)
+    -- --------------------------------------------------------
+
+    v_org_slug := lower(
+      regexp_replace(
+        regexp_replace(
+          COALESCE(row_data->>'provider_name', ''),
+          '[^a-zA-Z0-9 ]', '', 'g'
+        ),
+        '\s+', '-', 'g'
+      )
+    );
+
+    SELECT organization_id INTO v_org_id FROM organizations WHERE organization_slug = v_org_slug;
+
+    IF v_org_id IS NOT NULL THEN
+      UPDATE organizations SET
+        organization_name   = COALESCE(NULLIF(row_data->>'provider_name', ''), organization_name),
+        website_url         = COALESCE(NULLIF(row_data->>'website', ''), website_url),
+        main_phone          = COALESCE(NULLIF(row_data->>'phone', ''), main_phone),
+        parent_company_name = COALESCE(NULLIF(row_data->>'dba_name', ''), parent_company_name),
+        updated_at          = now()
+      WHERE organization_id = v_org_id;
+      c_orgs_updated := c_orgs_updated + 1;
+    ELSE
+      INSERT INTO organizations (
+        organization_name, organization_slug, website_url, main_phone,
+        parent_company_name, is_active
+      ) VALUES (
+        row_data->>'provider_name', v_org_slug,
+        NULLIF(row_data->>'website', ''), NULLIF(row_data->>'phone', ''),
+        NULLIF(row_data->>'dba_name', ''), true
+      )
+      RETURNING organization_id INTO v_org_id;
+      c_orgs_inserted := c_orgs_inserted + 1;
+    END IF;
+
+    -- --------------------------------------------------------
+    -- B. Upsert location (explicit lookup, exception-safe)
+    -- --------------------------------------------------------
+
+    v_achc_source_id := NULLIF(row_data->>'achc_company_id', '');
+    v_lat := NULLIF(row_data->>'latitude',  '')::numeric;
+    v_lon := NULLIF(row_data->>'longitude', '')::numeric;
+    v_confidence     := COALESCE(row_data->>'confidence_status', 'verified');
+    v_geocode_status := COALESCE(NULLIF(row_data->>'geocode_status', ''), CASE WHEN v_lat IS NOT NULL THEN 'ok' ELSE 'pending' END);
+
+    v_listing_status := CASE v_confidence
+      WHEN 'verified' THEN 'published'::public.listing_status
+      WHEN 'changed'  THEN 'needs_review'::public.listing_status
+      ELSE NULL
+    END;
+
+    v_location_id := NULL;
+    v_skip_row := false;
+
+    IF v_achc_source_id IS NOT NULL THEN
+      SELECT location_id INTO v_location_id FROM locations WHERE achc_source_id = v_achc_source_id;
+    END IF;
+
+    IF v_location_id IS NULL THEN
+      SELECT location_id INTO v_location_id FROM locations
+       WHERE organization_id = v_org_id
+         AND address_line_1  = row_data->>'street_address'
+         AND city            = row_data->>'city'
+         AND state           = row_data->>'state'
+         AND postal_code     = row_data->>'zip';
+    END IF;
+
+    BEGIN
+      IF v_location_id IS NOT NULL THEN
+        -- Snapshot what's on file before this update, so we can tell
+        -- whether the ADDRESS actually changed (not just "no fresh
+        -- geocode landed this run") before deciding whether it's safe
+        -- to carry the old coordinates forward.
+        SELECT locations.address_line_1, locations.city, locations.state, locations.postal_code,
+               locations.latitude, locations.longitude
+          INTO v_old_address_line_1, v_old_city, v_old_state, v_old_postal_code,
+               v_old_lat, v_old_lon
+          FROM locations WHERE location_id = v_location_id;
+
+        v_address_changed := (
+          NULLIF(row_data->>'street_address', '') IS NOT NULL AND row_data->>'street_address' <> v_old_address_line_1
+        ) OR (
+          NULLIF(row_data->>'city', '') IS NOT NULL AND row_data->>'city' <> v_old_city
+        ) OR (
+          NULLIF(row_data->>'state', '') IS NOT NULL AND row_data->>'state' <> v_old_state
+        ) OR (
+          NULLIF(row_data->>'zip', '') IS NOT NULL AND row_data->>'zip' <> v_old_postal_code
+        );
+
+        -- Only carry the old coordinates forward when the address is
+        -- unchanged. If it changed and this run didn't bring a fresh
+        -- geocode, clear to NULL/pending rather than silently keep a
+        -- pin at the provider's PREVIOUS address.
+        IF v_address_changed AND v_lat IS NULL THEN
+          v_effective_lat := NULL;
+          v_effective_lon := NULL;
+        ELSE
+          v_effective_lat := COALESCE(v_lat, v_old_lat);
+          v_effective_lon := COALESCE(v_lon, v_old_lon);
+        END IF;
+
+        v_has_coords := (v_effective_lat IS NOT NULL AND v_effective_lon IS NOT NULL);
+
+        UPDATE locations SET
+          achc_source_id       = COALESCE(locations.achc_source_id, v_achc_source_id),
+          organization_id      = v_org_id,
+          location_name        = COALESCE(NULLIF(row_data->>'provider_name', ''), locations.location_name),
+          address_line_1       = COALESCE(NULLIF(row_data->>'street_address', ''), locations.address_line_1),
+          city                 = COALESCE(NULLIF(row_data->>'city', ''), locations.city),
+          state                = COALESCE(NULLIF(row_data->>'state', ''), locations.state),
+          postal_code          = COALESCE(NULLIF(row_data->>'zip', ''), locations.postal_code),
+          latitude              = v_effective_lat,
+          longitude             = v_effective_lon,
+          geocode_status        = CASE WHEN v_has_coords THEN 'ok' WHEN v_address_changed THEN 'pending' ELSE v_geocode_status END,
+          public_phone         = COALESCE(NULLIF(row_data->>'phone', ''), locations.public_phone),
+          website_url          = COALESCE(NULLIF(row_data->>'website', ''), locations.website_url),
+          source_url           = COALESCE(NULLIF(row_data->>'source_url', ''), locations.source_url),
+          source_last_seen_at  = COALESCE(NULLIF(row_data->>'last_seen', '')::timestamptz, locations.source_last_seen_at),
+          last_verified_at     = COALESCE(NULLIF(row_data->>'last_verified_at', '')::timestamptz, locations.last_verified_at),
+          listing_status       = CASE WHEN v_confidence = 'possibly_inactive' THEN locations.listing_status ELSE COALESCE(v_listing_status, locations.listing_status) END,
+          accepts_public_display = v_has_coords,
+          source_system        = 'achc',
+          updated_at           = now()
+        WHERE location_id = v_location_id;
+        c_locs_updated := c_locs_updated + 1;
+      ELSE
+        v_has_coords := (v_lat IS NOT NULL AND v_lon IS NOT NULL);
+        INSERT INTO locations (
+          organization_id, achc_source_id, location_name, address_line_1,
+          city, state, postal_code, latitude, longitude, public_phone,
+          website_url, source_url, source_last_seen_at, last_verified_at,
+          listing_status, accepts_public_display, source_system, geocode_status
+        ) VALUES (
+          v_org_id, v_achc_source_id, row_data->>'provider_name',
+          row_data->>'street_address', row_data->>'city', row_data->>'state',
+          row_data->>'zip', v_lat, v_lon,
+          NULLIF(row_data->>'phone', ''), NULLIF(row_data->>'website', ''),
+          row_data->>'source_url',
+          NULLIF(row_data->>'last_seen', '')::timestamptz,
+          NULLIF(row_data->>'last_verified_at', '')::timestamptz,
+          COALESCE(v_listing_status, 'published'::public.listing_status),
+          (v_lat IS NOT NULL AND v_lon IS NOT NULL), 'achc', v_geocode_status
+        )
+        RETURNING location_id INTO v_location_id;
+        c_locs_inserted := c_locs_inserted + 1;
+      END IF;
+    EXCEPTION WHEN unique_violation THEN
+      -- Pre-existing duplicate data conflict (see 20260731000100's
+      -- header). Skip this row rather than aborting the whole batch;
+      -- recorded with enough detail (not just a count) for the row-issue
+      -- notification email to actually say which provider needs a look.
+      c_locs_skipped := c_locs_skipped + 1;
+      c_skipped_details := c_skipped_details || jsonb_build_object(
+        'issue', 'Skipped -- pre-existing duplicate-data conflict (unique constraint)',
+        'provider_name', row_data->>'provider_name',
+        'dba_name', row_data->>'dba_name',
+        'street_address', row_data->>'street_address',
+        'city', row_data->>'city',
+        'state', row_data->>'state',
+        'zip', row_data->>'zip',
+        'phone', row_data->>'phone',
+        'website', row_data->>'website',
+        'achc_company_id', row_data->>'achc_company_id',
+        'source_url', row_data->>'source_url'
+      );
+      v_skip_row := true;
+    END;
+
+    CONTINUE WHEN v_skip_row;
+
+    -- --------------------------------------------------------
+    -- C. Upsert accreditation_record (explicit lookup)
+    -- --------------------------------------------------------
+
+    UPDATE accreditation_records
+       SET is_current_record = false, updated_at = now()
+     WHERE location_id = v_location_id AND accrediting_body = row_data->>'accrediting_body' AND is_current_record = true;
+
+    IF EXISTS (SELECT 1 FROM accreditation_records WHERE location_id = v_location_id AND accrediting_body = row_data->>'accrediting_body') THEN
+      UPDATE accreditation_records SET
+        accreditation_status = 'active'::public.accreditation_status,
+        accreditation_scope  = COALESCE(NULLIF(row_data->>'result_scope', ''), accreditation_scope),
+        source_url           = COALESCE(NULLIF(row_data->>'source_url', ''), source_url),
+        imported_at          = now(), is_current_record = true, updated_at = now()
+      WHERE location_id = v_location_id AND accrediting_body = row_data->>'accrediting_body';
+    ELSE
+      INSERT INTO accreditation_records (
+        location_id, accrediting_body, accreditation_status, accreditation_scope,
+        source_url, imported_at, is_current_record
+      ) VALUES (
+        v_location_id, row_data->>'accrediting_body', 'active'::public.accreditation_status,
+        NULLIF(row_data->>'result_scope', ''), row_data->>'source_url', now(), true
+      );
+    END IF;
+
+    -- --------------------------------------------------------
+    -- D. Sync service_types -- replace, not just add
+    -- --------------------------------------------------------
+
+    v_services_raw := NULLIF(row_data->>'services', '');
+    IF v_services_raw IS NOT NULL THEN
+      -- ACHC is the authoritative source for what a location currently
+      -- offers. Remove links for any service no longer in this row's
+      -- list before (re)adding what's still there, so a service ACHC
+      -- revokes actually disappears from the site instead of sticking
+      -- around forever.
+      DELETE FROM location_service_types lst
+       WHERE lst.location_id = v_location_id
+         AND NOT EXISTS (
+           SELECT 1 FROM service_types st
+            WHERE st.service_type_id = lst.service_type_id
+              AND lower(st.service_type_name) = ANY (
+                SELECT lower(trim(x)) FROM unnest(string_to_array(v_services_raw, ',')) AS x
+              )
+         );
+
+      FOR v_service_name IN SELECT trim(unnest(string_to_array(v_services_raw, ','))) LOOP
+        IF v_service_name <> '' THEN
+          SELECT service_type_id INTO v_service_type_id
+            FROM service_types WHERE lower(service_type_name) = lower(v_service_name) AND is_active = true LIMIT 1;
+          IF v_service_type_id IS NOT NULL THEN
+            SELECT 1 INTO v_existing_services FROM location_service_types WHERE location_id = v_location_id AND service_type_id = v_service_type_id;
+            IF v_existing_services IS NULL THEN
+              INSERT INTO location_service_types (location_id, service_type_id) VALUES (v_location_id, v_service_type_id);
+            END IF;
+          END IF;
+        END IF;
+      END LOOP;
+    END IF;
+
+    -- --------------------------------------------------------
+    -- E. Review queue — confidence changes
+    -- --------------------------------------------------------
+
+    IF v_confidence = 'changed' THEN
+      IF NOT EXISTS (SELECT 1 FROM review_queue_items WHERE location_id = v_location_id AND review_type = 'other'::public.review_type AND review_status = 'open'::public.review_status AND issue_summary LIKE 'ACHC data change%') THEN
+        INSERT INTO review_queue_items (location_id, review_type, severity, review_status, issue_summary, opened_at)
+        VALUES (v_location_id, 'other'::public.review_type, 'low'::public.review_severity, 'open'::public.review_status, 'ACHC data change detected for provider: ' || COALESCE(row_data->>'provider_name', '[unknown]'), now());
+        c_flagged := c_flagged + 1;
+      END IF;
+    ELSIF v_confidence = 'possibly_inactive' THEN
+      IF NOT EXISTS (SELECT 1 FROM review_queue_items WHERE location_id = v_location_id AND review_type = 'other'::public.review_type AND review_status = 'open'::public.review_status AND issue_summary LIKE 'ACHC possibly inactive%') THEN
+        INSERT INTO review_queue_items (location_id, review_type, severity, review_status, issue_summary, opened_at)
+        VALUES (v_location_id, 'other'::public.review_type, 'medium'::public.review_severity, 'open'::public.review_status, 'ACHC possibly inactive -- not found in latest pull: ' || COALESCE(row_data->>'provider_name', '[unknown]'), now());
+        c_flagged := c_flagged + 1;
+      END IF;
+    END IF;
+
+    -- --------------------------------------------------------
+    -- F. Review queue — geocoding failure
+    -- --------------------------------------------------------
+
+    IF NOT v_has_coords AND v_geocode_status = 'failed' THEN
+      c_geocode_failed := c_geocode_failed + 1;
+      IF NOT EXISTS (
+        SELECT 1 FROM review_queue_items
+         WHERE location_id   = v_location_id
+           AND review_type   = 'other'::public.review_type
+           AND review_status = 'open'::public.review_status
+           AND issue_summary LIKE 'Geocoding failed%'
+      ) THEN
+        INSERT INTO review_queue_items (location_id, review_type, severity, review_status, issue_summary, opened_at)
+        VALUES (
+          v_location_id,
+          'other'::public.review_type,
+          'medium'::public.review_severity,
+          'open'::public.review_status,
+          'Geocoding failed -- location will not appear on map: ' || COALESCE(row_data->>'provider_name', '[unknown]') || ' (' || COALESCE(row_data->>'city', '') || ', ' || COALESCE(row_data->>'state', '') || ')',
+          now()
+        );
+      END IF;
+    ELSIF v_has_coords THEN
+      UPDATE review_queue_items
+         SET review_status = 'resolved'::public.review_status,
+             updated_at    = now()
+       WHERE location_id   = v_location_id
+         AND review_type   = 'other'::public.review_type
+         AND review_status = 'open'::public.review_status
+         AND issue_summary LIKE 'Geocoding failed%';
+    END IF;
+
+  END LOOP;
+
+  RETURN jsonb_build_object(
+    'orgs_inserted',      c_orgs_inserted,
+    'orgs_updated',       c_orgs_updated,
+    'locations_inserted', c_locs_inserted,
+    'locations_updated',  c_locs_updated,
+    'locations_skipped',  c_locs_skipped,
+    'skipped_details',    c_skipped_details,
+    'flagged',            c_flagged,
+    'geocode_failed',     c_geocode_failed,
+    'total_processed',    c_locs_inserted + c_locs_updated
+  );
+
+END;
+$$;

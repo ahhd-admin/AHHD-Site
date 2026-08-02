@@ -61,11 +61,19 @@ jobs:
       # search-deep-link approach (see MVP-Rollout-Roadmap.md), unrelated
       # to this change and still subject to its own required double
       # confirmation before ever being turned on.
+      #
+      # 2026-08-02: TEST_MODE flipped false -- true was silently
+      # suppressing the "0 rows scraped" failure check in
+      # achc_scraper.py (`if not all_rows and not TEST_MODE: raise`),
+      # meaning a real scraper break (site down, selector change) would
+      # have reported this run as "success" while writing nothing. The
+      # exact same silent-failure shape as the geocoding-disabled bug
+      # found earlier -- want a loud failure here, not another quiet one.
       - name: Run ACHC scraper and write raw + merged tabs
         working-directory: ./scrapers
         env:
           LIMIT_LOCATIONS: 0
-          TEST_MODE: "true"
+          TEST_MODE: "false"
           TEST_PROGRAMS: "Home Care,Home Health,Hospice"
           SCRAPER_SECRET: ${{ secrets.SCRAPER_SECRET }}
           GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
