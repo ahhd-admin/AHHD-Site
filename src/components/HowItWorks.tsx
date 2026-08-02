@@ -53,17 +53,6 @@ export default function HowItWorks() {
             </p>
           </div>
         </div>
-
-        <div className="mt-16 bg-neutral-50 rounded-2xl p-8 md:p-12">
-          <div className="max-w-3xl">
-            <h3 className="text-2xl font-heading font-semibold text-navy-800 mb-4">
-              Important Notice
-            </h3>
-            <p className="text-neutral-700 leading-relaxed text-lg">
-              The Accredited Home Healthcare Directory (AHHD) is an informational resource. Provider details are based on accreditation data from recognized accrediting bodies. We don't endorse specific providers, so always verify details and conduct your own research when choosing a care provider.
-            </p>
-          </div>
-        </div>
       </div>
     </section>
   );

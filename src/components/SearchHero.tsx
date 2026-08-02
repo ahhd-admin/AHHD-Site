@@ -1649,6 +1649,18 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
                 </div>
               )}
 
+              {/* Short, contextual version of the disclaimer -- right where
+                  someone's actually looking at results, not buried in a
+                  big standalone box further down the page (see
+                  HowItWorks.tsx and ProviderDetailPage.tsx's "About This
+                  Directory" box, which carries the fuller version at the
+                  point someone's looking at one specific provider). */}
+              {hasSubmittedSearch && !(loading && filteredLocations.length === 0) && (
+                <p className="px-4 py-1.5 text-xs text-neutral-600 border-b border-neutral-200 bg-neutral-50">
+                  AHHD doesn't endorse specific providers. Always verify accreditation and other details directly with them.
+                </p>
+              )}
+
               {hasSubmittedSearch && autoExpandNotice && !(loading && filteredLocations.length === 0) && (
                 // amber-800 on amber-50 measures 6.84:1 (clears AA) -- a
                 // noticeably different tone from the neutral results

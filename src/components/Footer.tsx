@@ -13,6 +13,9 @@ export default function Footer() {
             only route that currently exists; /about, /privacy, /terms don't.
             Re-add once those pages are built. */}
         <div className="text-neutral-400">
+          <p className="text-xs mb-1.5">
+            AHHD is an informational directory and does not endorse specific providers.
+          </p>
           <p>&copy; 2026 Accredited Home Healthcare Directory</p>
         </div>
       </div>
