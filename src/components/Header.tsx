@@ -12,8 +12,8 @@ export default function Header() {
           <div className="flex items-center">
             <a href="/" className="flex items-center">
               <img
-                src="/AHHD_logo.webp"
-                alt="AHHD Logo"
+                src="/ahhd-logo.png"
+                alt="Accredited Home Healthcare Directory"
                 className="h-12 w-auto"
               />
             </a>

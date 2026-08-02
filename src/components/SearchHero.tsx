@@ -1485,12 +1485,23 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   return (
     <section className="bg-neutral-50 py-6 md:py-10">
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
-        <div className="text-center mb-4 md:mb-6">
+        {/* Was text-center across the full max-w-7xl width -- but the
+            layout below it is an asymmetric two-column split (a fixed
+            300px search panel + a much wider flexible map/grid column),
+            so a heading centered on the FULL width doesn't align with
+            either column or the gap between them, which read as "off"
+            even though each piece was individually centered/aligned
+            correctly. Left-aligning to the search panel's own edge gives
+            the page one strong shared vertical line running from the
+            heading straight down through the panel, instead of a
+            centered block floating independently above an asymmetric
+            grid. */}
+        <div className="mb-4 md:mb-6">
           <h1 className="text-3xl md:text-4xl font-heading font-bold text-navy-800 mb-2">
             Find Quality Care Providers
           </h1>
 
-          <p className="text-base text-neutral-700 max-w-3xl mx-auto leading-relaxed">
+          <p className="text-base text-neutral-700 max-w-3xl leading-relaxed">
             Search accredited home care, hospice, and healthcare services in your area
           </p>
         </div>
