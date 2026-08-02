@@ -1388,7 +1388,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             </div>
             <p className="font-semibold text-navy-800 text-sm">Where are you looking for care?</p>
           </div>
-          <p className="text-xs text-neutral-600 mt-0.5">Enter a state, address, or ZIP code</p>
+          <p className="text-xs text-neutral-600 mt-0.5">Enter a state, address, or ZIP code.</p>
         </div>
       )}
 
@@ -1573,7 +1573,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
           </h1>
 
           <p className="text-base text-neutral-700 max-w-3xl leading-relaxed">
-            Search accredited home care, hospice, and healthcare services in your area
+            Search accredited home care, hospice, and healthcare services in your area.
           </p>
         </div>
 

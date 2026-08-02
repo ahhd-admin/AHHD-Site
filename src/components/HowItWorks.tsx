@@ -12,7 +12,7 @@ export default function HowItWorks() {
             How AHHD Works
           </h2>
           <p className="text-xl text-neutral-700 max-w-3xl leading-relaxed">
-            From verified accreditation to your first conversation with a provider
+            From verified accreditation to your first conversation with a provider.
           </p>
         </div>
 
