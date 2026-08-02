@@ -40,6 +40,24 @@ _REQUEST_DELAY = float(os.getenv("GEOCODE_REQUEST_DELAY", "0.25"))
 _GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json"
 
 # ---------------------------------------------------------------------------
+# Nominatim fallback (free, no monthly cap, but 1 request/second by policy)
+# ---------------------------------------------------------------------------
+# Deliberately opt-in (off by default) -- Nominatim's 1 req/sec limit means
+# geocoding a large backlog sequentially can take a long time (1000
+# addresses ~ 17 minutes), so this shouldn't silently kick in and extend
+# every nightly run. Meant for exactly what Jay described: an occasional,
+# deliberate "top off whatever's still missing lat/lng once the Google
+# budget is exhausted this month" pass, not an always-on second pipeline.
+# The goal is only ever "does this location have SOME real lat/lng so its
+# pin can render" -- not Google-level precision -- so results are cached
+# and used exactly the same way a Google result would be, with no
+# provenance tracking or later "upgrade to Google" step.
+ENABLE_NOMINATIM_FALLBACK = os.getenv("ENABLE_NOMINATIM_FALLBACK", "false").lower() == "true"
+_NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
+_NOMINATIM_USER_AGENT = "AHHD-Site-Scraper/1.0 (Accredited Home Healthcare Directory -- www.achhd.org)"
+_NOMINATIM_REQUEST_DELAY = float(os.getenv("NOMINATIM_REQUEST_DELAY", "1.1"))
+
+# ---------------------------------------------------------------------------
 # Monthly budget tracking — Google's Geocoding API free tier resets monthly
 # (10,000 calls/month as of this writing), not daily or per-run. The budget
 # period here is deliberately calendar-month to match that reset cadence;
@@ -155,6 +173,115 @@ async def geocode_address(
             await asyncio.sleep(_REQUEST_DELAY)
 
     return None, None
+
+
+# ---------------------------------------------------------------------------
+# Nominatim fallback geocoding -- see ENABLE_NOMINATIM_FALLBACK above
+# ---------------------------------------------------------------------------
+
+async def geocode_address_nominatim(
+    session: aiohttp.ClientSession,
+    street_address: str,
+    city: str,
+    state: str,
+    postal_code: str,
+) -> Tuple[Optional[float], Optional[float]]:
+    """A single Nominatim lookup. Callers are responsible for the 1 req/sec
+    rate limit (see geocode_locations_nominatim_fallback below) -- this
+    function itself makes no concurrency assumptions, unlike
+    geocode_address's semaphore-guarded Google version, because Nominatim
+    must be called strictly sequentially, never in parallel.
+
+    Returns a plain (lat, lon) point -- there's nothing antimeridian-
+    specific to handle here even for a Western Aleutians address (~172E,
+    the only realistic US case near the 180th meridian): that only
+    matters for BOUNDING BOXES/regions spanning the wrap (see
+    computeBoundsFromGeoJSON and the longitude OR-query fix in
+    AHHD-Site's SearchHero.tsx), not for a single lat/lng point, which is
+    just a normal number regardless of which side of 180 it falls on.
+    Downstream, a Nominatim-sourced point is queried exactly the same way
+    a Google-sourced one is.
+    """
+    query = f"{street_address}, {city}, {state} {postal_code}, USA"
+    params = {"q": query, "format": "json", "limit": "1"}
+
+    try:
+        async with session.get(
+            _NOMINATIM_URL,
+            params=params,
+            headers={"User-Agent": _NOMINATIM_USER_AGENT},
+            timeout=aiohttp.ClientTimeout(total=15),
+        ) as resp:
+            if resp.status != 200:
+                print(f"Nominatim HTTP {resp.status} for {city}, {state}")
+                return None, None
+            results = await resp.json()
+            if results:
+                return float(results[0]["lat"]), float(results[0]["lon"])
+    except Exception as exc:
+        print(f"Nominatim error for {city}, {state}: {exc}")
+
+    return None, None
+
+
+async def geocode_locations_nominatim_fallback(locations: list) -> list:
+    """Second pass for whatever's still geocode_status="pending" after
+    geocode_locations() -- addresses the Google monthly budget didn't
+    reach this run. Strictly sequential (Nominatim's usage policy caps
+    at 1 request/second, no bulk parallelism), so this is slow by design:
+    only call it when ENABLE_NOMINATIM_FALLBACK is deliberately turned on
+    for a one-off catch-up pass, not as a routine part of every nightly
+    run. Shares the same cache file/key format as the Google path, so a
+    Nominatim-resolved address is remembered exactly like a Google one
+    and never re-geocoded by either path again.
+    """
+    if not ENABLE_NOMINATIM_FALLBACK:
+        return locations
+
+    cache = load_cache()
+    groups = group_by_address(locations)
+    pending = [
+        (key, group) for key, group in groups.items()
+        if group[0].get("geocode_status") == "pending" and key not in cache
+    ]
+
+    if not pending:
+        print("Nominatim fallback: nothing pending -- skipping")
+        return locations
+
+    print(f"Nominatim fallback: {len(pending)} addresses still pending after the Google pass -- "
+          f"geocoding sequentially at ~1/{_NOMINATIM_REQUEST_DELAY}s (this will take a while)")
+
+    resolved = 0
+    failed = 0
+    async with aiohttp.ClientSession() as session:
+        for i, (key, group) in enumerate(pending):
+            sample = group[0]
+            lat, lon = await geocode_address_nominatim(
+                session,
+                sample.get("street_address", ""),
+                sample.get("city", ""),
+                sample.get("state", ""),
+                str(sample.get("zip", "")),
+            )
+            status = "ok" if lat is not None and lon is not None else "failed"
+            if status == "ok":
+                cache[key] = {"latitude": lat, "longitude": lon}
+                resolved += 1
+            else:
+                failed += 1
+            for loc in group:
+                loc["latitude"] = lat
+                loc["longitude"] = lon
+                loc["geocode_status"] = status
+            if (i + 1) % 50 == 0:
+                print(f"  Nominatim: {i + 1}/{len(pending)} processed ({resolved} resolved, {failed} failed)...")
+                save_cache(cache)
+            await asyncio.sleep(_NOMINATIM_REQUEST_DELAY)
+
+    save_cache(cache)
+    print(f"Nominatim fallback complete: {resolved} resolved, {failed} failed out of {len(pending)}")
+    return locations
 
 
 # ---------------------------------------------------------------------------

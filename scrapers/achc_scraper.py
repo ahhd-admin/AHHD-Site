@@ -10,7 +10,7 @@ from typing import Dict, List, Set, Tuple
 
 import aiohttp
 from dotenv import load_dotenv
-from geocode_helper import geocode_locations, print_dedup_report
+from geocode_helper import geocode_locations, geocode_locations_nominatim_fallback, print_dedup_report
 from places_helper import enrich_websites
 from accreditation_helper import fetch_accreditation_services, merge_ajax_services
 from playwright.async_api import async_playwright
@@ -1337,6 +1337,11 @@ async def main():
     # ---------------------------------------------------------------------------
     if ENABLE_GEOCODING:
         normalized = await geocode_locations(normalized)
+        # Opt-in second pass (ENABLE_NOMINATIM_FALLBACK) for whatever's
+        # still "pending" after the Google budget-capped run above -- see
+        # geocode_helper.py for why this is deliberately off by default
+        # and sequential/slow. No-ops immediately if the flag isn't set.
+        normalized = await geocode_locations_nominatim_fallback(normalized)
         geocode_failures = [r for r in normalized if r.get("geocode_status") == "failed"]
         geocode_ok       = [r for r in normalized if r.get("geocode_status") == "ok"]
         print(f"Geocoding complete: {len(geocode_ok)} with coords, {len(geocode_failures)} without")
