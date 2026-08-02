@@ -9,14 +9,23 @@ export default function Footer() {
           footer is now each page's own responsibility (e.g. ClosingCTA's
           py-16, ProviderDetailPage's mt-12 before its last section). */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Quick Links / Legal columns removed for now -- /find-care is the
-            only route that currently exists; /about, /privacy, /terms don't.
-            Re-add once those pages are built. */}
+        {/* Full Quick Links / Legal columns still removed -- /about and
+            /terms don't exist yet, only /privacy does so far. Re-add the
+            fuller footer layout once those are built. */}
         <div className="text-neutral-400">
           <p className="text-xs mb-1.5">
             AHHD is an informational directory and does not endorse specific providers.
           </p>
-          <p>&copy; 2026 Accredited Home Healthcare Directory</p>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <p>&copy; 2026 Accredited Home Healthcare Directory</p>
+            {/* Color set directly on the <a>, not inherited -- index.css's
+                global `a { text-primary-600 }` rule overrides any parent
+                color otherwise (see the documented gotcha in
+                DESIGN-SYSTEM-COLOR-PALETTE.md). */}
+            <a href="/privacy" className="text-neutral-400 hover:text-white underline">
+              Privacy Policy
+            </a>
+          </div>
         </div>
       </div>
     </footer>
