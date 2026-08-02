@@ -5,7 +5,7 @@ export default function Footer() {
         {/* Quick Links / Legal columns removed for now -- /find-care is the
             only route that currently exists; /about, /privacy, /terms don't.
             Re-add once those pages are built. */}
-        <div className="text-center text-neutral-400">
+        <div className="text-neutral-400">
           <p>&copy; 2026 Accredited Home Healthcare Directory</p>
         </div>
       </div>

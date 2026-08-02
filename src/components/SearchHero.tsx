@@ -1649,7 +1649,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             </div>
 
             {hasSubmittedSearch && filteredLocations.length === 0 && !loading && (
-              <div className="mt-4 text-center">
+              <div className="mt-4">
                 <p className="text-neutral-600">
                   No providers found matching your criteria. Try adjusting your filters or search location.
                 </p>

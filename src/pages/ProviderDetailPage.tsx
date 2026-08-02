@@ -476,7 +476,7 @@ export default function ProviderDetailPage({ locationId }: ProviderDetailPagePro
                   About This Listing
                 </h3>
                 <p className="text-sm text-neutral-700 leading-relaxed mb-4">
-                  This directory is informational only. AHHD does not endorse specific providers. Accreditation status can change — please verify details directly with the provider.
+                  This directory is informational only. AHHD does not endorse specific providers. Accreditation status can change, so please verify details directly with the provider.
                 </p>
                 {(() => {
                   const orgName = location.organization?.organization_name || '';
@@ -495,7 +495,7 @@ export default function ProviderDetailPage({ locationId }: ProviderDetailPagePro
                         Search for this provider's website
                       </a>
                       <p className="text-xs text-neutral-600 leading-relaxed">
-                        This search is launched using the information we have on file for this location. Please confirm the results you see match before relying on them — details can change over time, and some organizations operate under a different name (a "doing business as" name) than the legal entity name on file with their accrediting body.
+                        This search is launched using the information we have on file for this location. Please confirm the results you see match before relying on them. Details can change over time, and some organizations operate under a different name (a "doing business as" name) than the legal entity name on file with their accrediting body.
                       </p>
                     </>
                   );

@@ -16,11 +16,13 @@ export default function HomePage() {
 
         <section className="py-20 bg-neutral-50">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="text-center mb-16">
+            {/* Left-aligned to the shared max-w-7xl edge (see
+                UI-LAYOUT-STYLE-GUIDE.md) instead of centered. */}
+            <div className="mb-16">
               <h2 className="text-3xl md:text-4xl font-heading font-bold text-navy-800 mb-4">
                 Understanding Accreditation
               </h2>
-              <p className="text-xl text-neutral-700 max-w-3xl mx-auto leading-relaxed">
+              <p className="text-xl text-neutral-700 max-w-3xl leading-relaxed">
                 Accreditation is a voluntary review process where an independent organization checks that a healthcare provider meets nationally recognized standards for care quality and safety
               </p>
             </div>
