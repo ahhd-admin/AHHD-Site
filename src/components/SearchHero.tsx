@@ -891,7 +891,22 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   const classifyRegionScale = (types: string[] | undefined): 'state' | 'city' | 'zip' | 'address' => {
     if (types?.includes('administrative_area_level_1')) return 'state';
     if (types?.includes('postal_code')) return 'zip';
-    if (types?.includes('street_address') || types?.includes('premise') || types?.includes('subpremise')) return 'address';
+    if (
+      types?.includes('street_address') ||
+      types?.includes('premise') ||
+      types?.includes('subpremise') ||
+      // A named landmark/business (confirmed live: "Willis Tower" typed
+      // and searched directly, not picked from the autocomplete dropdown,
+      // comes back from Google's REST geocoding endpoint as only
+      // ['establishment', 'point_of_interest', 'tourist_attraction'] --
+      // no street_address/premise at all -- so it fell through to the
+      // generic 'city' bucket (25mi radius, no radius circle) despite
+      // resolving to a precise single point ("233 S Wacker Dr, Chicago,
+      // IL 60606, USA"). A landmark/POI is exactly as precise a point as
+      // a street address for this purpose.
+      types?.includes('point_of_interest') ||
+      types?.includes('establishment')
+    ) return 'address';
     return 'city';
   };
 
