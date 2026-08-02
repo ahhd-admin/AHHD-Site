@@ -119,7 +119,17 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   // covers the edge case of someone manually unchecking every box and
   // then submitting.
   const [selectedServices, setSelectedServices] = useState<string[]>(
-    initialCareParam ? initialCareParam.split(',').filter(Boolean) : Object.keys(ALL_SERVICES)
+    // Validated against ALL_SERVICES, not passed straight through --
+    // `care` comes from the URL query string, and the query below skips
+    // the service-type filter entirely once at least one slug is
+    // present. An unvalidated out-of-scope slug (e.g. a hand-typed or
+    // bookmarked `?care=pharmacy`) would otherwise surface the
+    // out-of-scope categories still sitting in Supabase from before the
+    // MVP scope decision (see serviceCategories.ts) despite the
+    // checkbox UI itself never offering them.
+    initialCareParam
+      ? initialCareParam.split(',').filter((slug) => slug in ALL_SERVICES)
+      : Object.keys(ALL_SERVICES)
   );
   const [viewMode, setViewMode] = useState<'map' | 'list'>(
     initialSearchParams.get('view') === 'list' ? 'list' : 'map'
