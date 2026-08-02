@@ -1521,10 +1521,17 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
                     {filteredLocations.length} accredited {filteredLocations.length === 1 ? 'provider' : 'providers'}
                     {location && ` near ${location}`}
                   </p>
-                  <div className="flex items-center gap-1 bg-white border border-neutral-200 rounded-lg p-1 h-[34px] flex-shrink-0">
+                  {/* Was w-7/h-[34px] (~28x24px effective tap target on
+                      mobile, measured live) -- below the ~44px comfortable
+                      minimum for a primary, frequently-tapped control,
+                      especially one likely used one-handed. Bumped to a
+                      real 44px on mobile; sm: and up keep the original
+                      auto-width-with-label sizing since desktop pointer
+                      precision doesn't need it. */}
+                  <div className="flex items-center gap-1.5 bg-white border border-neutral-200 rounded-lg p-1 h-11 sm:h-[34px] flex-shrink-0">
                     <button
                       onClick={() => setViewMode('map')}
-                      className={`flex items-center justify-center w-7 sm:w-auto sm:gap-1.5 sm:px-3 h-full rounded-md text-sm font-medium transition-all ${
+                      className={`flex items-center justify-center w-11 sm:w-auto sm:gap-1.5 sm:px-3 h-9 sm:h-full rounded-md text-sm font-medium transition-all ${
                         viewMode === 'map'
                           ? 'bg-primary-100 text-navy-800'
                           : 'text-neutral-600 hover:text-navy-800'
@@ -1537,7 +1544,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
                     </button>
                     <button
                       onClick={() => setViewMode('list')}
-                      className={`flex items-center justify-center w-7 sm:w-auto sm:gap-1.5 sm:px-3 h-full rounded-md text-sm font-medium transition-all ${
+                      className={`flex items-center justify-center w-11 sm:w-auto sm:gap-1.5 sm:px-3 h-9 sm:h-full rounded-md text-sm font-medium transition-all ${
                         viewMode === 'list'
                           ? 'bg-primary-100 text-navy-800'
                           : 'text-neutral-600 hover:text-navy-800'
