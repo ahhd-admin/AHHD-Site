@@ -37,7 +37,7 @@ export default function HowItWorks() {
               Check Accreditation Status
             </h3>
             <p className="text-neutral-700 leading-relaxed">
-              All providers listed have been accredited by ACHC (Accreditation Commission for Health Care), an independent organization that reviews home care, home health, and hospice providers.
+              All providers listed have been accredited by a recognized accrediting body, an independent organization that reviews home care, home health, and hospice providers.
             </p>
           </div>
 
@@ -60,7 +60,7 @@ export default function HowItWorks() {
               Important Notice
             </h3>
             <p className="text-neutral-700 leading-relaxed text-lg">
-              The Accredited Home Healthcare Directory (AHHD) is an informational resource. Listings are based on accreditation data from ACHC (Accreditation Commission for Health Care). We don't endorse specific providers, so always verify details and conduct your own research when choosing a care provider.
+              The Accredited Home Healthcare Directory (AHHD) is an informational resource. Listings are based on accreditation data from recognized accrediting bodies. We don't endorse specific providers, so always verify details and conduct your own research when choosing a care provider.
             </p>
           </div>
         </div>
