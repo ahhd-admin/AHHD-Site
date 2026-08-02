@@ -1359,9 +1359,15 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             autoComplete="off"
           />
           {showSuggestions && suggestions.length > 0 && (
+            // Was border-2 border-neutral-300 -- identical border weight/
+            // color to the input field directly above it, which read as a
+            // second input box rather than a dropdown menu (especially
+            // with just one suggestion, confirmed live). A thinner,
+            // lighter border plus the existing shadow reads more clearly
+            // as a floating menu.
             <div
               ref={suggestionsRef}
-              className="absolute z-[10000] mt-1 w-full bg-white border-2 border-neutral-300 rounded-xl shadow-2xl overflow-hidden"
+              className="absolute z-[10000] mt-1 w-full bg-white border border-neutral-200 rounded-xl shadow-2xl overflow-hidden"
             >
               {suggestions.map((suggestion) => (
                 <button
