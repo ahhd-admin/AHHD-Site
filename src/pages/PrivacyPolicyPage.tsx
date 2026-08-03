@@ -12,7 +12,7 @@ export default function PrivacyPolicyPage() {
             <h1 className="text-3xl md:text-4xl font-heading font-bold text-navy-800 mb-2">
               Privacy Policy
             </h1>
-            <p className="text-sm text-neutral-500 mb-8">Last updated August 2, 2026</p>
+            <p className="text-sm text-neutral-500 mb-8">Last updated August 3, 2026</p>
 
             <div className="space-y-8 text-neutral-700 leading-relaxed">
               <p>
@@ -25,6 +25,9 @@ export default function PrivacyPolicyPage() {
                 </h2>
                 <p className="mb-3">
                   When you search for care, we process the location and care-type filters you enter to show you matching providers. If you use the "My Location" button, your browser shares your approximate location with us for that search only. We don't create an account for you, and we don't ask for your name, email, or other personal details to use the search.
+                </p>
+                <p>
+                  We also keep an anonymous record of searches to help us understand which areas and care types people are looking for, so we can identify gaps in provider coverage. This never includes what you typed, your exact coordinates, or anything that identifies you or your device -- only a rounded, city-scale location (accurate to roughly seven miles), the care types and search radius used, and how many results were found.
                 </p>
                 <p>
                   Your browser also saves a few things locally on your own device, like your last search and map view, so the site feels responsive if you navigate back. This stays on your device and isn't sent to us.

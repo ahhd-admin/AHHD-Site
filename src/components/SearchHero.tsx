@@ -8,6 +8,7 @@ import { supabase } from '../lib/supabase';
 import type { LocationWithDetails } from '../types/database';
 import { calculateDistance } from '../lib/geoUtils';
 import { ALL_SERVICES } from '../lib/serviceCategories';
+import { logSearchEvent } from '../lib/searchTracking';
 import { resolveStateCode, extractStateCode, stateNameFromCode, findUniqueStateMatch } from '../lib/usStates';
 import { HOME_SCROLL_STORAGE_KEY } from '../lib/scrollRestoration';
 import { saveSearchCache, loadSearchCache } from '../lib/searchResultsCache';
@@ -711,6 +712,19 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
 
       setLocations(mapped);
       saveSearchCache(searchText, services, mapped, coords, usedBounds, scale, usedRadius);
+      // Foundation for a future coverage-gap heatmap -- logs the search's
+      // shape (region/scale, services, radius, result count) but never the
+      // raw search text or exact coordinates. See the search_events
+      // migration for the full privacy reasoning.
+      logSearchEvent({
+        coords,
+        scale,
+        stateCode,
+        serviceSlugs: services,
+        radiusMiles: usedRadius,
+        confineToState: confine,
+        resultCount: mapped.length,
+      });
     } catch (error) {
       // Previously left `locations` at whatever it already held (stale
       // results from a prior search, or the initial empty array) with no
