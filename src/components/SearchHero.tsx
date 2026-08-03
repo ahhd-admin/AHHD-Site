@@ -779,7 +779,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   // toggle over sub-options rather than a fourth sibling choice (a thin
   // vertical divider in a single row wasn't enough of a visual cue).
   const renderCareTypeCheckboxes = (compact: boolean) => (
-    <div className={`border-2 border-neutral-300 rounded-xl bg-white ${compact ? 'p-1.5' : 'p-2'}`}>
+    <div className={`border-2 border-neutral-500 rounded-xl bg-white ${compact ? 'p-1.5' : 'p-2'}`}>
       <label className="flex items-center gap-1.5 cursor-pointer px-1.5 py-1">
         <input
           ref={allCareCheckboxRef}
@@ -787,7 +787,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
           checked={allServicesSelected}
           onChange={toggleAllServices}
           aria-checked={someServicesSelected ? 'mixed' : allServicesSelected}
-          className="w-4 h-4 rounded border-neutral-300 text-primary-500 focus:ring-2 focus:ring-primary-200"
+          className="w-4 h-4 rounded border-neutral-500 text-primary-500 focus:ring-2 focus:ring-primary-600"
         />
         <span className={`font-semibold text-neutral-900 ${compact ? 'text-xs' : 'text-sm'}`}>All Care</span>
       </label>
@@ -798,7 +798,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
               type="checkbox"
               checked={selectedServices.includes(slug)}
               onChange={() => toggleService(slug)}
-              className="w-3.5 h-3.5 rounded border-neutral-300 text-primary-500 focus:ring-2 focus:ring-primary-200"
+              className="w-3.5 h-3.5 rounded border-neutral-500 text-primary-500 focus:ring-2 focus:ring-primary-600"
             />
             <span className={`text-neutral-700 ${compact ? 'text-xs' : 'text-sm'}`}>{ALL_SERVICES[slug]}</span>
           </label>
@@ -1425,7 +1425,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
         <div className="mb-3">
           <div className="flex items-center gap-2">
             <div className="w-9 h-9 bg-primary-100 rounded-full flex items-center justify-center flex-shrink-0">
-              <MapPin className="w-4 h-4 text-primary-600" />
+              <MapPin className="w-4 h-4 text-primary-700" />
             </div>
             <p className="font-semibold text-navy-800 text-sm">Where are you looking for care?</p>
           </div>
@@ -1490,11 +1490,11 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             aria-controls="location-suggestions-listbox"
             aria-autocomplete="list"
             aria-activedescendant={highlightedIndex >= 0 ? `location-suggestion-${highlightedIndex}` : undefined}
-            className="w-full pl-9 pr-3 h-[48px] text-base border-2 border-neutral-300 rounded-lg focus:outline-none focus:ring-4 focus:ring-primary-200 focus:border-primary-500 transition-all"
+            className="w-full pl-9 pr-3 h-[48px] text-base border-2 border-neutral-500 rounded-lg focus:outline-none focus:ring-4 focus:ring-primary-600 focus:border-primary-500 transition-all"
             autoComplete="off"
           />
           {showSuggestions && suggestions.length > 0 && (
-            // Was border-2 border-neutral-300 -- identical border weight/
+            // Was border-2 border-neutral-500 -- identical border weight/
             // color to the input field directly above it, which read as a
             // second input box rather than a dropdown menu (especially
             // with just one suggestion, confirmed live). A thinner,
@@ -1563,7 +1563,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
               type="checkbox"
               checked={confineToState}
               onChange={(e) => handleConfineToStateChange(e.target.checked)}
-              className="w-3.5 h-3.5 rounded border-neutral-300 text-primary-500 focus:ring-2 focus:ring-primary-200"
+              className="w-3.5 h-3.5 rounded border-neutral-500 text-primary-500 focus:ring-2 focus:ring-primary-600"
             />
             <span className="text-xs font-semibold text-navy-800">
               Confine to {searchStateCode ? stateNameFromCode(searchStateCode) ?? 'this state' : 'this state'} only
@@ -1580,7 +1580,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
               onClick={() => setShowStateInsuranceInfo(true)}
               onMouseEnter={() => setShowStateInsuranceInfo(true)}
               onMouseLeave={() => setShowStateInsuranceInfo(false)}
-              className="text-neutral-500 hover:text-navy-800 focus:outline-none focus:ring-2 focus:ring-primary-200 rounded-full"
+              className="text-neutral-500 hover:text-navy-800 focus:outline-none focus:ring-2 focus:ring-primary-600 rounded-full"
               aria-label="Why this matters"
               aria-expanded={showStateInsuranceInfo}
             >
@@ -1591,7 +1591,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             // navy-800 on neutral-50 measures 12.4:1 (AAA).
             <div
               role="tooltip"
-              className="absolute z-20 mt-1.5 w-64 p-2.5 bg-neutral-50 border border-neutral-300 rounded-lg shadow-lg text-xs text-navy-800"
+              className="absolute z-20 mt-1.5 w-64 p-2.5 bg-neutral-50 border border-neutral-500 rounded-lg shadow-lg text-xs text-navy-800"
             >
               Home care, hospice, and similar licensing (including Medicare/
               Medicaid coverage) is usually specific to one state. A nearby
@@ -1611,7 +1611,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             id="radius-select"
             value={distanceRadius}
             onChange={(e) => handleRadiusChange(Number(e.target.value))}
-            className="w-full px-3 h-[38px] text-sm border-2 border-neutral-300 rounded-lg focus:outline-none focus:ring-4 focus:ring-primary-200 focus:border-primary-500 transition-all bg-white text-neutral-800 font-medium"
+            className="w-full px-3 h-[38px] text-sm border-2 border-neutral-500 rounded-lg focus:outline-none focus:ring-4 focus:ring-primary-600 focus:border-primary-500 transition-all bg-white text-neutral-800 font-medium"
           >
             <option value={999999}>Any distance</option>
             <option value={5}>Within 5 mi</option>

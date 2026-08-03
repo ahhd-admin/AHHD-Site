@@ -74,7 +74,7 @@ export default function TrustStats() {
           className="flex items-center gap-3 bg-white border border-neutral-200 rounded-xl p-4"
         >
           <div className="w-11 h-11 md:w-12 md:h-12 bg-primary-100 rounded-full flex items-center justify-center flex-shrink-0">
-            <Icon className="w-5 h-5 md:w-6 md:h-6 text-primary-600" aria-hidden="true" />
+            <Icon className="w-5 h-5 md:w-6 md:h-6 text-primary-700" aria-hidden="true" />
           </div>
           <div>
             <p className="text-lg md:text-xl font-heading font-bold text-navy-800 leading-tight">{value}</p>

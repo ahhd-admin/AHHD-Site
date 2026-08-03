@@ -31,7 +31,7 @@ export default function HowItWorks() {
 
           <div>
             <div className="inline-flex items-center justify-center w-16 h-16 bg-primary-100 rounded-full mb-6">
-              <Search className="w-8 h-8 text-primary-600" />
+              <Search className="w-8 h-8 text-primary-700" />
             </div>
             <h3 className="text-xl font-heading font-semibold text-navy-800 mb-3">
               You Search by Location

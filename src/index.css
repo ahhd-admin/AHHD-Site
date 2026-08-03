@@ -32,8 +32,14 @@
     @apply text-xl md:text-2xl;
   }
 
+  /* primary-600 text on white measured 3.78:1 -- fails the 4.5:1 AA floor.
+     This is the base rule every plain <a> on the site inherits (confirmed
+     via a full-site contrast audit: header nav, provider sidebar links,
+     ProviderCard's "Visit Website"/"View Full Details", Privacy/Terms
+     contact links all failed here) -- same fix already applied to
+     .btn-outline below, just never applied to the element itself. */
   a {
-    @apply text-primary-600 hover:text-primary-700 transition-colors;
+    @apply text-primary-700 hover:text-primary-800 transition-colors;
   }
 
   button {

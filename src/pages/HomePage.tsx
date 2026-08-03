@@ -37,7 +37,7 @@ export default function HomePage() {
                       TrustStats' inline badge is the structural match,
                       just scaled for a card heading instead of a stat. */}
                   <div className="w-11 h-11 md:w-12 md:h-12 bg-primary-100 rounded-full flex items-center justify-center flex-shrink-0">
-                    <Award className="w-5 h-5 md:w-6 md:h-6 text-primary-600" />
+                    <Award className="w-5 h-5 md:w-6 md:h-6 text-primary-700" />
                   </div>
                   <h3 className="text-xl font-heading font-semibold text-navy-800">
                     What is Accreditation?

@@ -43,7 +43,7 @@ export default function AdminLogin() {
 
           <form onSubmit={handleSubmit} className="space-y-6">
             {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+              <div className="bg-red-50 border border-red-400 text-red-700 px-4 py-3 rounded-lg">
                 {error}
               </div>
             )}
@@ -58,7 +58,7 @@ export default function AdminLogin() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow"
+                className="w-full px-4 py-3 border border-slate-500 rounded-lg focus:!outline focus:!outline-2 focus:!outline-offset-2 focus:!outline-blue-700 transition-shadow"
                 placeholder="admin@example.com"
               />
             </div>
@@ -73,7 +73,7 @@ export default function AdminLogin() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-shadow"
+                className="w-full px-4 py-3 border border-slate-500 rounded-lg focus:!outline focus:!outline-2 focus:!outline-offset-2 focus:!outline-blue-700 transition-shadow"
                 placeholder="••••••••"
               />
             </div>
@@ -81,7 +81,7 @@ export default function AdminLogin() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-blue-700 focus:ring-4 focus:ring-blue-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-blue-700 focus:!outline focus:!outline-2 focus:!outline-offset-2 focus:!outline-blue-900 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? 'Signing in...' : 'Sign In'}
             </button>
