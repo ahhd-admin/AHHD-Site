@@ -1439,7 +1439,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
                 setShowSuggestions(false);
               }
             }}
-            placeholder="City, state, or ZIP code"
+            placeholder="City, state, address, or ZIP"
             aria-label="Search location"
             className="w-full pl-9 pr-3 h-[48px] text-base border-2 border-neutral-300 rounded-lg focus:outline-none focus:ring-4 focus:ring-primary-200 focus:border-primary-500 transition-all"
             autoComplete="off"
