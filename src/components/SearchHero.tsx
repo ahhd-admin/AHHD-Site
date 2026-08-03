@@ -211,6 +211,13 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   const [gettingLocation, setGettingLocation] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [suggestions, setSuggestions] = useState<google.maps.places.AutocompletePrediction[]>([]);
+  // -1 means nothing highlighted -- the input's own typed text is still
+  // "the value," matching how a real combobox distinguishes "browsing
+  // options with arrow keys" from "just typing." Confirmed via an
+  // accessibility audit that arrow keys previously did nothing at all
+  // (no role="combobox"/listbox structure existed), a full ARIA
+  // Authoring Practices combobox-pattern miss.
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const autocompleteService = useRef<google.maps.places.AutocompleteService | null>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
   // Set by whichever geocode call actually resolves the current location
@@ -376,6 +383,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
     const fetchSuggestions = async () => {
       if (!autocompleteService.current || !location.trim()) {
         setSuggestions([]);
+        setHighlightedIndex(-1);
         return;
       }
 
@@ -422,6 +430,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
           }
 
           setSuggestions(suggestionsWithState.slice(0, 5));
+          setHighlightedIndex(-1);
         });
       } catch (error) {
         console.error('Error fetching suggestions:', error);
@@ -726,6 +735,21 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
 
   const allServiceSlugs = Object.keys(ALL_SERVICES);
   const allServicesSelected = allServiceSlugs.every((s) => selectedServices.includes(s));
+  // Some, but not all, of the 3 real checkboxes are checked -- "indeterminate"
+  // is a DOM property, not an HTML attribute, so it has to be set imperatively
+  // via a ref rather than declaratively like `checked`. Without this, "All
+  // Care" silently reported as fully UNCHECKED (checked=false) the moment a
+  // visitor unchecked just one of the three real options, even though 2 of 3
+  // service types were still actively being searched -- misleading for a
+  // sighted user glancing at an empty box, and outright wrong for a screen
+  // reader user who'd hear "not checked" while services were still selected.
+  const someServicesSelected = selectedServices.length > 0 && !allServicesSelected;
+  const allCareCheckboxRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (allCareCheckboxRef.current) {
+      allCareCheckboxRef.current.indeterminate = someServicesSelected;
+    }
+  }, [someServicesSelected]);
 
   const toggleAllServices = () => {
     setSelectedServices(allServicesSelected ? [] : allServiceSlugs);
@@ -758,9 +782,11 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
     <div className={`border-2 border-neutral-300 rounded-xl bg-white ${compact ? 'p-1.5' : 'p-2'}`}>
       <label className="flex items-center gap-1.5 cursor-pointer px-1.5 py-1">
         <input
+          ref={allCareCheckboxRef}
           type="checkbox"
           checked={allServicesSelected}
           onChange={toggleAllServices}
+          aria-checked={someServicesSelected ? 'mixed' : allServicesSelected}
           className="w-4 h-4 rounded border-neutral-300 text-primary-500 focus:ring-2 focus:ring-primary-200"
         />
         <span className={`font-semibold text-neutral-900 ${compact ? 'text-xs' : 'text-sm'}`}>All Care</span>
@@ -1432,15 +1458,38 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             }}
             onFocus={() => setShowSuggestions(true)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') {
+              // Full ARIA Authoring Practices combobox pattern -- confirmed
+              // via an accessibility audit that arrow keys previously did
+              // nothing at all (no role="combobox"/listbox structure
+              // existed, so Tab was the only way to reach a suggestion, with
+              // zero programmatic relationship communicated to a screen
+              // reader).
+              if (e.key === 'ArrowDown' && showSuggestions && suggestions.length > 0) {
                 e.preventDefault();
-                handleSearch();
+                setHighlightedIndex((i) => (i + 1) % suggestions.length);
+              } else if (e.key === 'ArrowUp' && showSuggestions && suggestions.length > 0) {
+                e.preventDefault();
+                setHighlightedIndex((i) => (i - 1 + suggestions.length) % suggestions.length);
+              } else if (e.key === 'Enter') {
+                e.preventDefault();
+                if (showSuggestions && highlightedIndex >= 0 && suggestions[highlightedIndex]) {
+                  const s = suggestions[highlightedIndex];
+                  handleSelectSuggestion(s.place_id, s.description);
+                } else {
+                  handleSearch();
+                }
               } else if (e.key === 'Escape') {
                 setShowSuggestions(false);
+                setHighlightedIndex(-1);
               }
             }}
             placeholder="City, state, address, or ZIP"
             aria-label="Search location"
+            role="combobox"
+            aria-expanded={showSuggestions && suggestions.length > 0}
+            aria-controls="location-suggestions-listbox"
+            aria-autocomplete="list"
+            aria-activedescendant={highlightedIndex >= 0 ? `location-suggestion-${highlightedIndex}` : undefined}
             className="w-full pl-9 pr-3 h-[48px] text-base border-2 border-neutral-300 rounded-lg focus:outline-none focus:ring-4 focus:ring-primary-200 focus:border-primary-500 transition-all"
             autoComplete="off"
           />
@@ -1453,13 +1502,21 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             // as a floating menu.
             <div
               ref={suggestionsRef}
+              id="location-suggestions-listbox"
+              role="listbox"
               className="absolute z-[10000] mt-1 w-full bg-white border border-neutral-200 rounded-xl shadow-2xl overflow-hidden"
             >
-              {suggestions.map((suggestion) => (
+              {suggestions.map((suggestion, index) => (
                 <button
                   key={suggestion.place_id}
+                  id={`location-suggestion-${index}`}
+                  role="option"
+                  aria-selected={index === highlightedIndex}
                   onClick={() => handleSelectSuggestion(suggestion.place_id, suggestion.description)}
-                  className="w-full px-4 py-3 text-left hover:bg-primary-50 transition-colors border-b border-neutral-100 last:border-b-0 flex items-center gap-3"
+                  onMouseEnter={() => setHighlightedIndex(index)}
+                  className={`w-full px-4 py-3 text-left transition-colors border-b border-neutral-100 last:border-b-0 flex items-center gap-3 ${
+                    index === highlightedIndex ? 'bg-primary-50' : 'hover:bg-primary-50'
+                  }`}
                 >
                   <MapPin className="w-4 h-4 text-neutral-400 flex-shrink-0" />
                   <span className="text-neutral-800">{suggestion.description}</span>
@@ -1670,7 +1727,12 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
                 // header above it, read as "heads up," not an error.
                 <div className="flex items-start gap-2 px-4 py-2.5 border-b border-amber-200 bg-amber-50 text-sm text-amber-800 animate-fade-in-up">
                   <HelpCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                  <p>{autoExpandNotice}</p>
+                  {/* The results-count text next to this already announces
+                      via aria-live -- confirmed a screen reader user heard
+                      the count change, but never WHY (a silent auto-widened
+                      radius), or later, why zero results are showing (see
+                      the matching aria-live below). */}
+                  <p aria-live="polite">{autoExpandNotice}</p>
                 </div>
               )}
 
@@ -1750,7 +1812,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
 
             {hasSubmittedSearch && filteredLocations.length === 0 && !loading && (
               <div className="mt-4">
-                <p className="text-neutral-600">
+                <p className="text-neutral-600" aria-live="polite">
                   No providers found matching your criteria. Try adjusting your filters or search location.
                 </p>
               </div>

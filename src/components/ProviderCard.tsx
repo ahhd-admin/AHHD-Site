@@ -35,10 +35,21 @@ export default function ProviderCard({ location, distance }: ProviderCardProps) 
     normalizeForComparison(location.location_name) !==
       normalizeForComparison(location.organization?.organization_name || '');
 
+  const providerName = location.organization?.organization_name || 'Healthcare Provider';
+
   return (
     <a
       href={`/provider/${buildProviderSlug(location.organization?.organization_name || location.location_name || '', location.achc_source_id)}`}
       onClick={saveHomeScrollPosition}
+      // Without this, the card's accessible name is every visible text node
+      // concatenated with no pauses (name + badge + verified date + service
+      // tags + city/state + distance, all run together) -- confirmed live via
+      // an accessibility audit: technically leads with the provider name, but
+      // it's a long, unstructured single announcement per card across dozens
+      // of results. This caps it to what actually matters for choosing which
+      // card to open, while the full visible content stays exactly as-is for
+      // sighted users (aria-label overrides the computed name, not the DOM).
+      aria-label={`${providerName}, ${location.city}, ${location.state}. View details.`}
       className={`card p-4 hover:shadow-xl transition-all duration-300 hover:-translate-y-1 block group relative ${isEnhanced ? 'ring-2 ring-amber-400' : ''}`}
     >
       {isEnhanced && (

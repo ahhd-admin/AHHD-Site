@@ -65,6 +65,19 @@ function MapContent({ locations, userCoords, searchBounds, boundaryPolygon, boun
   const map = useMap();
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
 
+  // Escape closes the open InfoWindow -- confirmed via an accessibility
+  // audit this didn't work at all (only the Tab-reachable custom Close
+  // button did), breaking the standard expectation for a keyboard-
+  // dismissible popup (ARIA APG dialog/popup pattern).
+  useEffect(() => {
+    if (!selectedLocationId) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSelectedLocationId(null);
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [selectedLocationId]);
+
   // Google's own InfoWindow close button (.gm-ui-hover-effect) can't be
   // hidden with a normal CSS rule -- confirmed live that even an
   // external stylesheet rule with !important doesn't win against it (its
@@ -421,6 +434,21 @@ function MapContent({ locations, userCoords, searchBounds, boundaryPolygon, boun
     // once services/data finish settling).
     lastFitGenerationRef.current = searchGeneration ?? 0;
     hasFitWithMarkersRef.current = true;
+
+    // Confirmed via an accessibility audit: restoring a selected pin here
+    // re-opens its InfoWindow, which Google's own Maps library then silently
+    // moves keyboard focus into (landing on an internal AdvancedMarker
+    // drag-instruction node -- "To activate drag with keyboard, press Alt +
+    // Enter..." -- meaningless to a visitor, especially a screen reader
+    // user with no idea where they landed after clicking "Back to Search
+    // Results"). requestAnimationFrame runs after that synchronous
+    // camera/selection work above, which in testing was enough to win the
+    // race against Google's own focus grab. Targets the results-list
+    // heading (a real, meaningful landmark -- "N Providers") rather than
+    // fighting Google's internal behavior directly.
+    requestAnimationFrame(() => {
+      document.getElementById('map-results-heading')?.focus();
+    });
   }, [map, locationsWithCoords, searchGeneration]);
 
   const handlePinClick = (location: LocationWithDetails) => {
@@ -641,7 +669,9 @@ function ResultsList({ locations, hoveredLocationId, setHoveredLocationId }: Res
   return (
     <div className="mt-4 bg-neutral-50 rounded-lg p-3 md:p-4 max-h-80 md:max-h-96 overflow-y-auto">
       <div className="flex items-center justify-between mb-1">
-        <h3 className="font-semibold text-navy-800 text-sm md:text-base">
+        {/* id/tabIndex target for the view-restoration focus fix below --
+            see the comment on hasRestoredViewRef's effect. */}
+        <h3 id="map-results-heading" tabIndex={-1} className="font-semibold text-navy-800 text-sm md:text-base outline-none">
           {locations.length} {locations.length === 1 ? 'Provider' : 'Providers'}
         </h3>
         <p className="text-xs text-neutral-500">Tap to view</p>

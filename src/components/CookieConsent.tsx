@@ -28,9 +28,18 @@ export default function CookieConsent() {
   if (!visible) return null;
 
   return (
+    // aria-live="polite" so a screen reader user actually hears that this
+    // appeared -- confirmed via an accessibility audit that role="region"
+    // alone is silent on appearance (a landmark is only announced if a
+    // user happens to navigate into it, not proactively). Deliberately
+    // polite, not role="alert"/assertive -- declining doesn't lose any
+    // data or block anything, so it doesn't need to interrupt whatever
+    // the visitor is already doing, and focus is intentionally left where
+    // it was rather than forced onto the banner.
     <div
       className="fixed bottom-0 inset-x-0 z-50 bg-navy-800 text-white border-t border-navy-600 shadow-lg"
       role="region"
+      aria-live="polite"
       aria-label="Cookie notice"
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col sm:flex-row sm:items-center gap-4">
