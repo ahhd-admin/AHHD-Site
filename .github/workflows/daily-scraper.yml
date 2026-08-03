@@ -10,6 +10,11 @@ jobs:
   scrape-and-merge:
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    # Needed for the "Commit updated sitemap.xml" step below -- the only
+    # step in this workflow that writes back to the repo itself (everything
+    # else writes to Supabase/Sheets/artifacts). Scoped to just this job.
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repository
@@ -93,6 +98,34 @@ jobs:
           name: normalized-dump
           path: scrapers/normalized_dump.json
           retention-days: 7
+
+      # A static sitemap.xml isn't realistic for a directory this size
+      # (6,000+ real, individually indexable provider pages) -- regenerates
+      # it from the just-updated live data every night so search engines
+      # always see the current set. Node (not Python) since it reuses
+      # src/lib/slug.ts's exact URL-building logic -- see scripts/
+      # generate_sitemap.mjs's own header comment for the full reasoning.
+      - name: Regenerate sitemap.xml
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: node scripts/generate_sitemap.mjs
+
+      # The only step in this workflow that writes back to the repo
+      # itself (everything else above writes to Supabase/Sheets/artifacts)
+      # -- a no-op, not a failure, on a night where the provider set
+      # genuinely didn't change (git diff empty).
+      - name: Commit updated sitemap.xml
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add public/sitemap.xml
+          if git diff --cached --quiet; then
+            echo "sitemap.xml unchanged, nothing to commit"
+          else
+            git commit -m "Update sitemap.xml (automated nightly run)"
+            git push
+          fi
 
       # Production Supabase writes happen directly from the scraper
       # (write_to_supabase_direct, ENABLE_DIRECT_SUPABASE) above. Google
