@@ -57,17 +57,22 @@ export default function TrustStats() {
   ];
 
   return (
-    // flex + justify-between (not a grid) so the first stat sits flush
-    // with the search panel's left edge and the last one sits flush
-    // with the map's right edge, same shared container/edges as
-    // everything else on this page -- not a padded/bordered card, which
-    // would inset the last item short of that right edge.
-    <div
-      className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-5 sm:gap-6 py-5 mb-4 md:mb-6 border-y border-neutral-200"
-      aria-label="Directory statistics"
-    >
+    // grid-cols-3 (equal thirds), not flex+justify-between -- justify-between
+    // positions the middle item based on the OTHER TWO items' own content
+    // widths, not the container's true center, so the middle stat visibly
+    // drifted off-center from the page whenever the first/third items'
+    // text happened to differ in width. Equal-width columns guarantee the
+    // middle one actually centers. Trades away the previous version's
+    // edge-alignment to the search panel/map below (a subtler nuance the
+    // uneven centering was more noticeable than) -- each stat now in its
+    // own bordered container for real visual weight instead of floating
+    // text, which also reads as more intentional on its own.
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4 md:mb-6" aria-label="Directory statistics">
       {stats.map(({ icon: Icon, value, label }) => (
-        <div key={label} className="flex items-center gap-3">
+        <div
+          key={label}
+          className="flex items-center gap-3 bg-white border border-neutral-200 rounded-xl p-4"
+        >
           <div className="w-11 h-11 md:w-12 md:h-12 bg-primary-100 rounded-full flex items-center justify-center flex-shrink-0">
             <Icon className="w-5 h-5 md:w-6 md:h-6 text-primary-600" aria-hidden="true" />
           </div>
