@@ -2,4 +2,27 @@ User-agent: *
 Allow: /
 Disallow: /admin
 
+# Known AI-training data harvesters -- blocked from bulk-crawling the
+# directory. This is an honor-system signal (well-behaved bots respect
+# it, nothing stops a bot that ignores robots.txt entirely), not a real
+# technical barrier -- see the Terms of Service's Acceptable Use section
+# for the actual anti-scraping/reuse policy.
+User-agent: GPTBot
+Disallow: /
+
+User-agent: CCBot
+Disallow: /
+
+User-agent: Google-Extended
+Disallow: /
+
+User-agent: anthropic-ai
+Disallow: /
+
+User-agent: ClaudeBot
+Disallow: /
+
+User-agent: Bytespider
+Disallow: /
+
 Sitemap: https://www.accreditedhomehealthcare.directory/sitemap.xml

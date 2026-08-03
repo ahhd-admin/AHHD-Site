@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import HomePage from './pages/HomePage';
 import ProviderDetailPage from './pages/ProviderDetailPage';
 import PrivacyPolicyPage from './pages/PrivacyPolicyPage';
+import TermsOfServicePage from './pages/TermsOfServicePage';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminLogin from './pages/AdminLogin';
 import ManageListings from './pages/admin/ManageListings';
@@ -46,6 +47,10 @@ export default function Router() {
 
   if (currentPath === '/privacy') {
     return <PrivacyPolicyPage />;
+  }
+
+  if (currentPath === '/terms') {
+    return <TermsOfServicePage />;
   }
 
   if (currentPath === '/admin' && !currentPath.includes('/admin/')) {

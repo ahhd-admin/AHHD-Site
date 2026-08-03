@@ -33,6 +33,15 @@ export default function PrivacyPolicyPage() {
 
               <section>
                 <h2 className="text-xl font-heading font-semibold text-navy-800 mb-3">
+                  Cookies and analytics
+                </h2>
+                <p>
+                  We ask before using any analytics cookies. If you accept, we use Google Analytics to see which searches and pages are most useful, so we can improve AHHD. We don't use cookies for ads or to track you across other sites. If you decline, that cookie is never set. Either way, the site works exactly the same. Your choice is remembered on your device so we don't ask again on your next visit.
+                </p>
+              </section>
+
+              <section>
+                <h2 className="text-xl font-heading font-semibold text-navy-800 mb-3">
                   Third-party services we rely on
                 </h2>
                 <p>
