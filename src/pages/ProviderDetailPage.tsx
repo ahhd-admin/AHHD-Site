@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase';
 import type { LocationWithDetails } from '../types/database';
 import { parseAchcSourceIdFromSlug } from '../lib/slug';
 import { getVerifiedDate, formatVerifiedDate } from '../lib/formatVerifiedDate';
+import { setCanonicalUrl } from '../lib/canonicalUrl';
 
 interface ProviderDetailPageProps {
   locationId?: string;
@@ -45,6 +46,14 @@ export default function ProviderDetailPage({ locationId }: ProviderDetailPagePro
       document.title = 'Accredited Home Healthcare Directory - Find Accredited Care Providers';
     };
   }, [location]);
+
+  // See lib/canonicalUrl.ts -- without this every provider page declared
+  // the HOMEPAGE as its own canonical URL (a static tag in index.html,
+  // shared by every route in this SPA), telling search engines not to
+  // index provider pages separately at all.
+  useEffect(() => {
+    return setCanonicalUrl(window.location.pathname);
+  }, [locationId]);
 
   const loadProvider = async (id: string, byLocationId = false) => {
     setLoading(true);
