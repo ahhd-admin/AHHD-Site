@@ -27,6 +27,25 @@ export default function ProviderDetailPage({ locationId }: ProviderDetailPagePro
     }
   }, [locationId]);
 
+  // Every page previously shared the exact same static <title> from
+  // index.html -- confirmed via grep that no page anywhere set
+  // document.title dynamically, so all 6,000+ provider pages (and every
+  // search-engine result / social share of one) showed the same generic
+  // homepage title instead of naming the actual provider. Reset on
+  // unmount in case client-side navigation (pushState, not a hard
+  // reload) ever moves directly between two provider pages.
+  useEffect(() => {
+    if (!location) return;
+    const orgName = location.organization?.organization_name || 'Healthcare Provider';
+    const cityState = [location.city, location.state].filter(Boolean).join(', ');
+    document.title = cityState
+      ? `${orgName} - ${cityState} | Accredited Home Healthcare Directory`
+      : `${orgName} | Accredited Home Healthcare Directory`;
+    return () => {
+      document.title = 'Accredited Home Healthcare Directory - Find Accredited Care Providers';
+    };
+  }, [location]);
+
   const loadProvider = async (id: string, byLocationId = false) => {
     setLoading(true);
 
@@ -105,8 +124,38 @@ export default function ProviderDetailPage({ locationId }: ProviderDetailPagePro
   const callToActionText = location.listing_settings?.call_to_action_text;
   const callToActionUrl = location.listing_settings?.call_to_action_url;
 
+  // Structured data for this specific provider -- both classic SEO (rich
+  // results) and "GEO" (helping AI answer engines extract accurate,
+  // structured facts about this provider rather than having to parse
+  // prose). Client-rendered JSON-LD like this is picked up by Google's
+  // crawler (it executes JS), a well-established pattern for SPAs.
+  const structuredData = {
+    '@context': 'https://schema.org',
+    '@type': 'MedicalBusiness',
+    name: location.organization?.organization_name || 'Healthcare Provider',
+    address: {
+      '@type': 'PostalAddress',
+      streetAddress: location.address_line_1 || undefined,
+      addressLocality: location.city || undefined,
+      addressRegion: location.state || undefined,
+      postalCode: location.postal_code || undefined,
+      addressCountry: 'US',
+    },
+    ...(location.public_phone ? { telephone: location.public_phone } : {}),
+    ...(location.website_url || location.organization?.website_url
+      ? { url: location.website_url || location.organization?.website_url }
+      : {}),
+    ...(location.latitude && location.longitude
+      ? { geo: { '@type': 'GeoCoordinates', latitude: location.latitude, longitude: location.longitude } }
+      : {}),
+    ...(activeAccreditations.length > 0
+      ? { description: `Accredited by ${activeAccreditations.map((a) => a.accrediting_body).join(', ')}.` }
+      : {}),
+  };
+
   return (
     <div className="min-h-screen flex flex-col">
+      <script type="application/ld+json">{JSON.stringify(structuredData)}</script>
       <Header />
 
       <main className="flex-1">

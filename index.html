@@ -6,9 +6,43 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Accredited Home Healthcare Directory - Find Accredited Care Providers</title>
     <meta name="description" content="Search accredited home care, home health, and hospice providers by location. AHHD surfaces accreditation status from recognized accrediting bodies; it doesn't endorse specific providers." />
+
+    <!-- Domain below is a working assumption (matches the site's contact
+         email domain, accreditedhomehealthcare.directory) -- confirm
+         against the real production domain once DNS is live and update
+         if it differs. -->
+    <link rel="canonical" href="https://www.accreditedhomehealthcare.directory/" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Accredited Home Healthcare Directory" />
+    <meta property="og:title" content="Accredited Home Healthcare Directory - Find Accredited Care Providers" />
+    <meta property="og:description" content="Search accredited home care, home health, and hospice providers by location. AHHD surfaces accreditation status from recognized accrediting bodies; it doesn't endorse specific providers." />
+    <meta property="og:url" content="https://www.accreditedhomehealthcare.directory/" />
+    <meta property="og:image" content="https://www.accreditedhomehealthcare.directory/ahhd-logo.png" />
+
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Accredited Home Healthcare Directory - Find Accredited Care Providers" />
+    <meta name="twitter:description" content="Search accredited home care, home health, and hospice providers by location." />
+    <meta name="twitter:image" content="https://www.accreditedhomehealthcare.directory/ahhd-logo.png" />
+
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Open+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+    <!-- Structured data (schema.org) for answer-engine/AI-search
+         visibility as well as classic SEO -- describes AHHD itself as an
+         organization/website, distinct from the per-provider
+         MedicalOrganization markup on each provider detail page. -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": "Accredited Home Healthcare Directory",
+        "alternateName": "AHHD",
+        "url": "https://www.accreditedhomehealthcare.directory/",
+        "description": "A directory of home care, home health, and hospice providers accredited by recognized accrediting bodies."
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
