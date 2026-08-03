@@ -33,7 +33,11 @@ export default function CookieConsent() {
       aria-label="Cookie notice"
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6">
-        <p className="text-sm text-primary-100 leading-relaxed flex-1">
+        {/* max-w-xl keeps this from spanning nearly the full banner width --
+            unconstrained, its two sentences wrapped to a long first line and
+            a much shorter second one, reading as lopsided/accidental rather
+            than an intentional two-line block. */}
+        <p className="text-sm text-primary-100 leading-relaxed flex-1 max-w-xl">
           We use Google Analytics cookies to see which searches and pages are most useful, so we can improve AHHD. We don't use them for ads or to track you across other sites. See our{' '}
           {/* Color set directly on the <a>, not inherited -- index.css's
               global `a { text-primary-600 }` rule overrides any parent
@@ -44,16 +48,20 @@ export default function CookieConsent() {
           </a>{' '}
           for details.
         </p>
+        {/* Sized to match Search/"My Location" (h-11/44px, same tap-target
+            height established earlier for mobile) rather than shrinking to
+            fit "Decline"/"Accept" alone -- min-w keeps the text itself
+            compact/centered instead of stretching across the wider button. */}
         <div className="flex gap-3 flex-shrink-0">
           <button
             onClick={() => handleChoice('declined')}
-            className="border-2 border-white text-white hover:bg-white hover:text-navy-800 text-sm px-4 py-2 rounded-lg font-semibold transition-colors"
+            className="border-2 border-white text-white hover:bg-white hover:text-navy-800 text-sm h-11 min-w-[120px] px-4 rounded-lg font-semibold transition-colors"
           >
             Decline
           </button>
           <button
             onClick={() => handleChoice('accepted')}
-            className="bg-white text-neutral-900 hover:bg-neutral-100 text-sm px-4 py-2 rounded-lg font-semibold transition-colors"
+            className="bg-white text-neutral-900 hover:bg-neutral-100 text-sm h-11 min-w-[120px] px-4 rounded-lg font-semibold transition-colors"
           >
             Accept
           </button>
