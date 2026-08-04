@@ -1,4 +1,3 @@
-import { Menu, X } from 'lucide-react';
 import { useState } from 'react';
 
 export default function Header() {
@@ -39,11 +38,29 @@ export default function Header() {
             aria-label="Toggle menu"
             aria-expanded={mobileMenuOpen}
           >
-            {mobileMenuOpen ? (
-              <X className="w-6 h-6 text-navy-700" />
-            ) : (
-              <Menu className="w-6 h-6 text-navy-700" />
-            )}
+            {/* 3 bars that rotate/translate into an X instead of swapping
+                between two separate icons -- a cross-fade between
+                unrelated SVGs doesn't read as smooth the way an actual
+                morph does. Middle bar just fades out (an X only needs 2
+                diagonals); the outer two translate to the middle bar's
+                position and rotate to +-45deg, crossing there. */}
+            <div aria-hidden="true" className="w-6 h-5 flex flex-col justify-between">
+              <span
+                className={`block h-0.5 w-full bg-navy-700 rounded-full transition-transform duration-300 ease-in-out ${
+                  mobileMenuOpen ? 'translate-y-[9px] rotate-45' : ''
+                }`}
+              />
+              <span
+                className={`block h-0.5 w-full bg-navy-700 rounded-full transition-opacity duration-200 ease-in-out ${
+                  mobileMenuOpen ? 'opacity-0' : 'opacity-100'
+                }`}
+              />
+              <span
+                className={`block h-0.5 w-full bg-navy-700 rounded-full transition-transform duration-300 ease-in-out ${
+                  mobileMenuOpen ? '-translate-y-[9px] -rotate-45' : ''
+                }`}
+              />
+            </div>
           </button>
         </div>
 

@@ -755,21 +755,6 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
 
   const allServiceSlugs = Object.keys(ALL_SERVICES);
   const allServicesSelected = allServiceSlugs.every((s) => selectedServices.includes(s));
-  // Some, but not all, of the 3 real checkboxes are checked -- "indeterminate"
-  // is a DOM property, not an HTML attribute, so it has to be set imperatively
-  // via a ref rather than declaratively like `checked`. Without this, "All
-  // Care" silently reported as fully UNCHECKED (checked=false) the moment a
-  // visitor unchecked just one of the three real options, even though 2 of 3
-  // service types were still actively being searched -- misleading for a
-  // sighted user glancing at an empty box, and outright wrong for a screen
-  // reader user who'd hear "not checked" while services were still selected.
-  const someServicesSelected = selectedServices.length > 0 && !allServicesSelected;
-  const allCareCheckboxRef = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    if (allCareCheckboxRef.current) {
-      allCareCheckboxRef.current.indeterminate = someServicesSelected;
-    }
-  }, [someServicesSelected]);
 
   const toggleAllServices = () => {
     setSelectedServices(allServicesSelected ? [] : allServiceSlugs);
@@ -794,58 +779,48 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   // Shared between the centered hero card (compact) and the post-search
   // filters row (full-size) so Type of Care can be picked before the very
   // first search, not just to refine an already-populated map.
-  // Stacked on mobile and at lg (the sidebar again) -- "All Care" sits
-  // above a horizontal-rule divider with the three real options indented
-  // beneath it, so it reads as a master toggle over sub-options rather
-  // than a fourth sibling choice.
-  const renderCareTypeCheckboxes = (compact: boolean) => (
-    // Same sm/lg range as the search row above: below lg the panel is
-    // full-width, wide enough that a narrow, tall stack of checkboxes
-    // looks disproportionate next to it -- laid out in one row instead
-    // (wrapping if it ever needs to). Reverts to the original vertical/
-    // indented list on mobile (not enough width for a row) and again at
-    // lg, where the panel narrows back down to a 300px sidebar.
-    <div className={`border-2 border-neutral-500 rounded-xl bg-white sm:flex sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-1 lg:block ${compact ? 'p-1.5' : 'p-2'}`}>
-      <label className="flex items-center gap-1.5 cursor-pointer px-1.5 py-1 sm:flex-shrink-0 whitespace-nowrap">
-        <input
-          ref={allCareCheckboxRef}
-          type="checkbox"
-          checked={allServicesSelected}
-          onChange={toggleAllServices}
-          aria-checked={someServicesSelected ? 'mixed' : allServicesSelected}
-          className="w-4 h-4 rounded border-neutral-500 text-primary-500 focus:ring-2 focus:ring-primary-600"
-        />
-        <span className={`font-semibold text-neutral-900 ${compact ? 'text-xs' : 'text-sm'}`}>All Care</span>
-      </label>
-      {/* Only shown in the flat sm-to-lg row -- on mobile and at lg, the
-          horizontal border-t below already marks "All Care" as the
-          master toggle over the indented options beneath it. In the flat
-          row that horizontal rule renders as nothing (display:contents
-          voids it, see below), so without this, "All Care" would read as
-          a fourth sibling option instead of the group's parent toggle. */}
-      <div aria-hidden="true" className="hidden sm:block lg:hidden w-px h-4 bg-neutral-300 flex-shrink-0" />
-      {/* display:contents at sm flattens this into the parent's row (its
-          own border/padding/spacing utilities render as nothing while
-          contents), so the individual checkboxes below become direct
-          flex items sitting inline with "All Care" instead of a nested,
-          indented sub-list. lg:block restores the normal box (and with
-          it, every unprefixed class here) once the panel is a sidebar
-          again. */}
-      <div className="mt-1 pt-1.5 border-t border-neutral-200 pl-5 space-y-1 sm:contents lg:block">
-        {allServiceSlugs.map((slug) => (
-          <label key={slug} className="flex items-center gap-1.5 cursor-pointer px-1.5 py-0.5 whitespace-nowrap">
-            <input
-              type="checkbox"
-              checked={selectedServices.includes(slug)}
-              onChange={() => toggleService(slug)}
-              className="w-3.5 h-3.5 rounded border-neutral-500 text-primary-500 focus:ring-2 focus:ring-primary-600"
-            />
-            <span className={`text-neutral-700 ${compact ? 'text-xs' : 'text-sm'}`}>{ALL_SERVICES[slug]}</span>
-          </label>
+  // Tap-to-toggle chips instead of checkboxes -- bigger touch targets,
+  // an at-a-glance filled/outline selected state instead of squinting at
+  // small checkmarks, and matches the pill style already used for
+  // service-type tags on ProviderCard. One consistent layout at every
+  // width (a plain wrapping row) instead of the previous checkbox
+  // version's separate mobile/tablet/desktop treatments -- chips don't
+  // need the indentation-implies-hierarchy convention checkboxes do, so
+  // "All Care" reads fine as just the first chip in the row, no divider
+  // needed. Selected state reads as filled/solid vs. outlined/hollow, not
+  // just a color change -- distinct enough on its own without also
+  // needing a checkmark.
+  const renderCareTypeChips = () => {
+    const chips: { key: string; label: string; selected: boolean; onClick: () => void }[] = [
+      { key: 'all', label: 'All Care', selected: allServicesSelected, onClick: toggleAllServices },
+      ...allServiceSlugs.map((slug) => ({
+        key: slug,
+        label: ALL_SERVICES[slug],
+        selected: selectedServices.includes(slug),
+        onClick: () => toggleService(slug),
+      })),
+    ];
+
+    return (
+      <div className="flex flex-wrap gap-2">
+        {chips.map((chip) => (
+          <button
+            key={chip.key}
+            type="button"
+            onClick={chip.onClick}
+            aria-pressed={chip.selected}
+            className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold border-2 transition-colors whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-1 ${
+              chip.selected
+                ? 'bg-primary-700 border-primary-700 text-white'
+                : 'bg-white border-neutral-500 text-neutral-700 hover:border-primary-600 hover:text-primary-700'
+            }`}
+          >
+            {chip.label}
+          </button>
         ))}
       </div>
-    </div>
-  );
+    );
+  };
 
   // Shared by handleSearch's direct-state short-circuit and the synthetic
   // "[State] (entire state)" suggestion below -- resolves a search string
@@ -1626,7 +1601,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             <p><span className="font-semibold">Hospice</span> -- end-of-life care focused on comfort, pain management, and emotional support for patients and their families.</p>
           </div>
         )}
-        {renderCareTypeCheckboxes(true)}
+        {renderCareTypeChips()}
       </fieldset>
 
       {hasSubmittedSearch && searchRegionScale === 'state' && (
