@@ -794,10 +794,10 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   // Shared between the centered hero card (compact) and the post-search
   // filters row (full-size) so Type of Care can be picked before the very
   // first search, not just to refine an already-populated map.
-  // Stacked, not a flat row -- "All Care" sits above a divider with the
-  // three real options indented beneath it, so it reads as a master
-  // toggle over sub-options rather than a fourth sibling choice (a thin
-  // vertical divider in a single row wasn't enough of a visual cue).
+  // Stacked on mobile and at lg (the sidebar again) -- "All Care" sits
+  // above a horizontal-rule divider with the three real options indented
+  // beneath it, so it reads as a master toggle over sub-options rather
+  // than a fourth sibling choice.
   const renderCareTypeCheckboxes = (compact: boolean) => (
     // Same sm/lg range as the search row above: below lg the panel is
     // full-width, wide enough that a narrow, tall stack of checkboxes
@@ -817,6 +817,13 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
         />
         <span className={`font-semibold text-neutral-900 ${compact ? 'text-xs' : 'text-sm'}`}>All Care</span>
       </label>
+      {/* Only shown in the flat sm-to-lg row -- on mobile and at lg, the
+          horizontal border-t below already marks "All Care" as the
+          master toggle over the indented options beneath it. In the flat
+          row that horizontal rule renders as nothing (display:contents
+          voids it, see below), so without this, "All Care" would read as
+          a fourth sibling option instead of the group's parent toggle. */}
+      <div aria-hidden="true" className="hidden sm:block lg:hidden w-px h-4 bg-neutral-300 flex-shrink-0" />
       {/* display:contents at sm flattens this into the parent's row (its
           own border/padding/spacing utilities render as nothing while
           contents), so the individual checkboxes below become direct
