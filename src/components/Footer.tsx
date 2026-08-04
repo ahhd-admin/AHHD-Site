@@ -15,7 +15,7 @@ export default function Footer() {
           <p className="text-xs mb-1.5">
             AHHD is an informational directory and does not endorse specific providers.
           </p>
-          <p className="mb-2">&copy; 2026 Accredited Home Healthcare Directory</p>
+          <p className="text-xs mb-2">&copy; 2026 Accredited Home Healthcare Directory</p>
           {/* Own small, separate line -- not inline with the copyright
               text -- since these are a distinct kind of link (legal
               reference, not attribution) and don't need equal visual

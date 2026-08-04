@@ -9,7 +9,7 @@ export default function ClosingCTA() {
   };
 
   return (
-    <section className="bg-navy-800 text-white py-16">
+    <section className="bg-navy-800 text-white pt-16 pb-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="max-w-2xl">
           {/* text-white set directly here, not inherited from the section --

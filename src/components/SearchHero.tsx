@@ -236,6 +236,12 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   // only" -- a hover-or-tap popover (not a native title tooltip, which
   // doesn't work on touch) explaining why crossing state lines matters.
   const [showStateInsuranceInfo, setShowStateInsuranceInfo] = useState(false);
+  // Same hover-or-tap popover pattern, next to "Type of Care" -- explains
+  // the difference between Home Care/Home Health/Hospice for visitors who
+  // don't already know it. One shared popover covering all three rather
+  // than an icon per checkbox, which would crowd the row (especially at
+  // the tablet width where all 4 checkboxes already sit on one line).
+  const [showCareTypeInfo, setShowCareTypeInfo] = useState(false);
 
   // Restores a search coming in from the URL (e.g. hitting the browser
   // back button after clicking into a provider page). Checks the results
@@ -793,8 +799,14 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   // toggle over sub-options rather than a fourth sibling choice (a thin
   // vertical divider in a single row wasn't enough of a visual cue).
   const renderCareTypeCheckboxes = (compact: boolean) => (
-    <div className={`border-2 border-neutral-500 rounded-xl bg-white ${compact ? 'p-1.5' : 'p-2'}`}>
-      <label className="flex items-center gap-1.5 cursor-pointer px-1.5 py-1">
+    // Same sm/lg range as the search row above: below lg the panel is
+    // full-width, wide enough that a narrow, tall stack of checkboxes
+    // looks disproportionate next to it -- laid out in one row instead
+    // (wrapping if it ever needs to). Reverts to the original vertical/
+    // indented list on mobile (not enough width for a row) and again at
+    // lg, where the panel narrows back down to a 300px sidebar.
+    <div className={`border-2 border-neutral-500 rounded-xl bg-white sm:flex sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-1 lg:block ${compact ? 'p-1.5' : 'p-2'}`}>
+      <label className="flex items-center gap-1.5 cursor-pointer px-1.5 py-1 sm:flex-shrink-0 whitespace-nowrap">
         <input
           ref={allCareCheckboxRef}
           type="checkbox"
@@ -805,9 +817,16 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
         />
         <span className={`font-semibold text-neutral-900 ${compact ? 'text-xs' : 'text-sm'}`}>All Care</span>
       </label>
-      <div className="mt-1 pt-1.5 border-t border-neutral-200 pl-5 space-y-1">
+      {/* display:contents at sm flattens this into the parent's row (its
+          own border/padding/spacing utilities render as nothing while
+          contents), so the individual checkboxes below become direct
+          flex items sitting inline with "All Care" instead of a nested,
+          indented sub-list. lg:block restores the normal box (and with
+          it, every unprefixed class here) once the panel is a sidebar
+          again. */}
+      <div className="mt-1 pt-1.5 border-t border-neutral-200 pl-5 space-y-1 sm:contents lg:block">
         {allServiceSlugs.map((slug) => (
-          <label key={slug} className="flex items-center gap-1.5 cursor-pointer px-1.5 py-0.5">
+          <label key={slug} className="flex items-center gap-1.5 cursor-pointer px-1.5 py-0.5 whitespace-nowrap">
             <input
               type="checkbox"
               checked={selectedServices.includes(slug)}
@@ -1447,8 +1466,16 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
         </div>
       )}
 
-      <div className="flex flex-col gap-2">
-        <div className="relative">
+      {/* Below lg, the panel is full-width (stacked above the map) --
+          plenty of room to fit the input and both buttons in one row
+          instead of stacking them, so tablet/narrow-desktop windows don't
+          waste vertical space on a second row just for two buttons. Mobile
+          (below sm) keeps the stacked layout -- not enough width for all
+          three without squeezing the button labels. Reverts to stacked
+          again at lg itself, where the panel becomes a fixed 300px
+          sidebar next to the map -- too narrow for one row there too. */}
+      <div className="flex flex-col sm:flex-row lg:flex-col gap-2">
+        <div className="relative sm:flex-1 lg:flex-auto min-w-0">
           <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 w-4 h-4 z-10 pointer-events-none" />
           <input
             ref={inputRef}
@@ -1540,11 +1567,11 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
           )}
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex gap-2 sm:flex-shrink-0 lg:flex-shrink lg:w-full">
           <button
             onClick={handleGeolocation}
             disabled={gettingLocation}
-            className="btn-outline flex-1 px-3 h-[44px] flex items-center justify-center gap-1.5 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+            className="btn-outline flex-1 sm:min-w-[135px] px-3 h-[44px] flex items-center justify-center gap-1.5 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
             aria-label="Use my location"
             title="Use my location"
           >
@@ -1554,7 +1581,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
 
           <button
             onClick={handleSearch}
-            className="btn-primary flex-1 px-3 h-[44px] flex items-center justify-center gap-1.5 whitespace-nowrap"
+            className="btn-primary flex-1 sm:min-w-[135px] px-3 h-[44px] flex items-center justify-center gap-1.5 whitespace-nowrap"
           >
             <Search className="w-4 h-4" />
             <span className="text-sm">Search</span>
@@ -1565,8 +1592,33 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
       {/* Type of Care lives here unconditionally (both before and after
           search) -- it's part of what's being searched for, not a
           refinement to bolt on afterward. */}
-      <fieldset className="mt-3 border-0 p-0 m-0 min-w-0">
-        <legend className="text-xs font-semibold text-navy-800 mb-1">Type of Care</legend>
+      <fieldset className="mt-3 border-0 p-0 m-0 min-w-0 relative">
+        <legend className="flex items-center gap-1 text-xs font-semibold text-navy-800 mb-1">
+          Type of Care
+          <button
+            type="button"
+            onClick={() => setShowCareTypeInfo(true)}
+            onMouseEnter={() => setShowCareTypeInfo(true)}
+            onMouseLeave={() => setShowCareTypeInfo(false)}
+            className="text-neutral-500 hover:text-navy-800 focus:outline-none focus:ring-2 focus:ring-primary-600 rounded-full"
+            aria-label="What's the difference between these types of care?"
+            aria-expanded={showCareTypeInfo}
+          >
+            <HelpCircle className="w-3.5 h-3.5" />
+          </button>
+        </legend>
+        {showCareTypeInfo && (
+          // navy-800 on neutral-50 measures 12.4:1 (AAA). Same popover
+          // treatment as "Why this matters" next to Confine to state.
+          <div
+            role="tooltip"
+            className="absolute z-20 mt-1.5 w-72 max-w-[calc(100vw-3rem)] p-2.5 bg-neutral-50 border border-neutral-500 rounded-lg shadow-lg text-xs text-navy-800 space-y-2"
+          >
+            <p><span className="font-semibold">Home Care</span> -- non-medical help with daily activities like bathing, dressing, meals, and companionship for people who want to stay independent at home.</p>
+            <p><span className="font-semibold">Home Health</span> -- medical care at home from licensed professionals, like skilled nursing or physical therapy, ordered by a doctor.</p>
+            <p><span className="font-semibold">Hospice</span> -- end-of-life care focused on comfort, pain management, and emotional support for patients and their families.</p>
+          </div>
+        )}
         {renderCareTypeCheckboxes(true)}
       </fieldset>
 
