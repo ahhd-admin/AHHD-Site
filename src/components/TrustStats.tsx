@@ -40,11 +40,17 @@ export default function TrustStats() {
       icon: Users,
       value: providerCount !== null ? providerCount.toLocaleString() : ' ',
       label: 'Accredited providers',
+      // Short, self-contained phrase for the mobile strip -- the full
+      // card version pairs a bare number with "Accredited providers" on
+      // its own line underneath, but a strip has no second line, so the
+      // number needs its context folded into one phrase instead.
+      short: providerCount !== null ? `${providerCount.toLocaleString()} Providers` : 'Providers',
     },
     {
       icon: RefreshCw,
       value: 'Updated Daily',
       label: 'Fresh accreditation data every night',
+      short: 'Updated Daily',
     },
     {
       // Confirmed against live data (2026-08-02): published, MVP-scope
@@ -53,37 +59,55 @@ export default function TrustStats() {
       icon: MapPinned,
       value: 'Nationwide Coverage',
       label: 'Accredited providers across the U.S.',
+      short: 'Nationwide',
     },
   ];
 
   return (
-    // grid-cols-3 at every width, not just sm+ -- three full stacked cards
-    // on mobile pushed the actual search form noticeably further down the
-    // page for what's a "nice to know, not the main event" trust signal.
-    // Icon-on-top, centered, on mobile -- side-by-side (icon left of text)
-    // left almost no width for the text block once the icon and its gap
-    // were subtracted from an already-narrow 1/3 column, and words like
-    // "Nationwide" ended up wrapping right at the card's edge. Stacking
-    // gives the text the card's full width (minus padding) to wrap in
-    // instead. sm: reverts to the original spacious side-by-side, left-
-    // aligned layout once there's width to spare. Equal-width columns
-    // (not flex+justify-between) so the middle stat's container is
-    // genuinely centered regardless of how long the other two's text is.
-    <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-4 md:mb-6" aria-label="Directory statistics">
-      {stats.map(({ icon: Icon, value, label }) => (
-        <div
-          key={label}
-          className="flex flex-col items-center text-center gap-1.5 sm:flex-row sm:items-center sm:text-left sm:gap-3 bg-white border border-neutral-200 rounded-xl px-2.5 py-3 sm:p-4 min-w-0"
-        >
-          <div className="w-8 h-8 sm:w-11 sm:h-11 md:w-12 md:h-12 bg-primary-100 rounded-full flex items-center justify-center flex-shrink-0">
-            <Icon className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6 text-primary-700" aria-hidden="true" />
+    <>
+      {/* Mobile: a single condensed strip, not three cards. Even the
+          icon-on-top card version was ~150px of "nice to know, not the
+          main event" content pushing the actual search form down the
+          page -- collapsed to one line (icon + a short self-contained
+          phrase per stat, dot-separated) instead. Card grid (sm: below)
+          is display:none here, so nothing is announced twice to a
+          screen reader -- only one of the two ever has a box. */}
+      <div
+        className="sm:hidden flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 mb-4 text-xs text-neutral-700"
+        aria-label="Directory statistics"
+      >
+        {stats.map(({ icon: Icon, short }, i) => (
+          <span key={short} className="inline-flex items-center gap-2.5">
+            {i > 0 && <span aria-hidden="true" className="text-neutral-300">&bull;</span>}
+            <span className="inline-flex items-center gap-1">
+              <Icon className="w-3.5 h-3.5 text-primary-700 flex-shrink-0" aria-hidden="true" />
+              {short}
+            </span>
+          </span>
+        ))}
+      </div>
+
+      {/* sm and up: the fuller card treatment, unchanged -- there's
+          enough width here that three cards read as real content, not
+          clutter. Equal-width columns (not flex+justify-between) so the
+          middle stat's container is genuinely centered regardless of how
+          long the other two's text is. */}
+      <div className="hidden sm:grid sm:grid-cols-3 gap-4 mb-6" aria-label="Directory statistics">
+        {stats.map(({ icon: Icon, value, label }) => (
+          <div
+            key={label}
+            className="flex items-center gap-3 bg-white border border-neutral-200 rounded-xl p-4 min-w-0"
+          >
+            <div className="w-11 h-11 md:w-12 md:h-12 bg-primary-100 rounded-full flex items-center justify-center flex-shrink-0">
+              <Icon className="w-5 h-5 md:w-6 md:h-6 text-primary-700" aria-hidden="true" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-lg md:text-xl font-heading font-bold text-navy-800 leading-tight">{value}</p>
+              <p className="text-xs md:text-sm text-neutral-600">{label}</p>
+            </div>
           </div>
-          <div className="min-w-0">
-            <p className="text-xs sm:text-lg md:text-xl font-heading font-bold text-navy-800 leading-tight">{value}</p>
-            <p className="text-xs md:text-sm text-neutral-600 leading-snug sm:leading-normal">{label}</p>
-          </div>
-        </div>
-      ))}
-    </div>
+        ))}
+      </div>
+    </>
   );
 }
