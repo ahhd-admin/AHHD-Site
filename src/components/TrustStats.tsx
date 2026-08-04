@@ -60,24 +60,27 @@ export default function TrustStats() {
     // grid-cols-3 at every width, not just sm+ -- three full stacked cards
     // on mobile pushed the actual search form noticeably further down the
     // page for what's a "nice to know, not the main event" trust signal.
-    // A single condensed row (small icon, small text, tight padding) gets
-    // the same three facts across in a fraction of the vertical space;
-    // sm: restores the original larger, more spacious card sizing once
-    // there's width to spare. Equal-width columns (not flex+justify-
-    // between) so the middle stat's container is genuinely centered
-    // regardless of how long the other two's text happens to be.
+    // Icon-on-top, centered, on mobile -- side-by-side (icon left of text)
+    // left almost no width for the text block once the icon and its gap
+    // were subtracted from an already-narrow 1/3 column, and words like
+    // "Nationwide" ended up wrapping right at the card's edge. Stacking
+    // gives the text the card's full width (minus padding) to wrap in
+    // instead. sm: reverts to the original spacious side-by-side, left-
+    // aligned layout once there's width to spare. Equal-width columns
+    // (not flex+justify-between) so the middle stat's container is
+    // genuinely centered regardless of how long the other two's text is.
     <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-4 md:mb-6" aria-label="Directory statistics">
       {stats.map(({ icon: Icon, value, label }) => (
         <div
           key={label}
-          className="flex items-center gap-2 sm:gap-3 bg-white border border-neutral-200 rounded-xl px-2 py-2 sm:p-4 min-w-0"
+          className="flex flex-col items-center text-center gap-1.5 sm:flex-row sm:items-center sm:text-left sm:gap-3 bg-white border border-neutral-200 rounded-xl px-2.5 py-3 sm:p-4 min-w-0"
         >
-          <div className="w-7 h-7 sm:w-11 sm:h-11 md:w-12 md:h-12 bg-primary-100 rounded-full flex items-center justify-center flex-shrink-0">
-            <Icon className="w-3.5 h-3.5 sm:w-5 sm:h-5 md:w-6 md:h-6 text-primary-700" aria-hidden="true" />
+          <div className="w-8 h-8 sm:w-11 sm:h-11 md:w-12 md:h-12 bg-primary-100 rounded-full flex items-center justify-center flex-shrink-0">
+            <Icon className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6 text-primary-700" aria-hidden="true" />
           </div>
           <div className="min-w-0">
             <p className="text-xs sm:text-lg md:text-xl font-heading font-bold text-navy-800 leading-tight">{value}</p>
-            <p className="text-[10px] sm:text-xs md:text-sm text-neutral-600 leading-snug sm:leading-normal">{label}</p>
+            <p className="text-xs md:text-sm text-neutral-600 leading-snug sm:leading-normal">{label}</p>
           </div>
         </div>
       ))}
