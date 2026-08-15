@@ -1674,7 +1674,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   );
 
   return (
-    <section className="bg-neutral-50 py-6 md:py-10">
+    <section className="bg-neutral-50 py-4 md:py-10">
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
         {/* Was text-center across the full max-w-7xl width -- but the
             layout below it is an asymmetric two-column split (a fixed
@@ -1687,12 +1687,12 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             heading straight down through the panel, instead of a
             centered block floating independently above an asymmetric
             grid. */}
-        <div className="mb-4 md:mb-6">
-          <h1 className="text-3xl md:text-4xl font-heading font-bold text-navy-800 mb-2">
+        <div className="mb-3 md:mb-6">
+          <h1 className="text-2xl md:text-4xl font-heading font-bold text-navy-800 mb-1.5 md:mb-2">
             Find Accredited Care Providers
           </h1>
 
-          <p className="text-base text-neutral-700 max-w-3xl leading-relaxed">
+          <p className="text-sm md:text-base text-neutral-700 max-w-3xl leading-relaxed">
             Search accredited home care, hospice, and healthcare services in your area.
           </p>
         </div>

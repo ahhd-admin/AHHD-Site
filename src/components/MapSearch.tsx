@@ -51,6 +51,19 @@ interface MapSearchProps {
 const DEFAULT_CENTER = { lat: 39.8283, lng: -95.5795 };
 const DEFAULT_ZOOM = 4.2;
 
+// The real geographic extent of the lower 48 -- fitBounds to this (see the
+// idle-state effect below) instead of relying on DEFAULT_CENTER/DEFAULT_ZOOM
+// alone. A fixed center+zoom was tuned against a wide desktop container;
+// Google Maps shows the same on-screen degree span per pixel regardless of
+// container shape, so that exact zoom on a narrow, tall mobile container
+// (a portrait phone, not the landscape aspect it was tuned for) framed a
+// much narrower slice of longitude centered on the same point -- confirmed
+// live this put the visible area well south of the country, over Mexico/
+// the Gulf, rather than "the whole US, zoomed out." fitBounds recomputes
+// the right zoom for whatever the actual container shape is, so the same
+// bounds read as "the whole contiguous US" on any aspect ratio.
+const CONUS_BOUNDS = { south: 24.396308, west: -125.0, north: 49.384358, east: -66.93457 };
+
 // "ahhd-provider-map" was a placeholder name, not a real Map ID -- Advanced
 // Markers require an actual Map ID registered in Google Cloud Console with
 // vector rendering enabled, or they fail to render (the base map still
@@ -405,6 +418,19 @@ function MapContent({ locations, userCoords, searchBounds, boundaryPolygon, boun
       }
     }
   }, [searchBounds, userCoords, map, searchGeneration, locationsWithCoords]);
+
+  // Idle state -- no search submitted yet, so neither of the two branches
+  // above (which both require searchBounds or userCoords) ever runs, and
+  // the map would otherwise just sit at whatever defaultCenter/defaultZoom
+  // rendered it with (see CONUS_BOUNDS above for why that alone isn't
+  // reliable across container shapes). Re-fits any time both go back to
+  // null -- e.g. the location field is cleared -- so returning to "no
+  // search" always shows the full country again, not whatever camera
+  // position was left over from a previous search.
+  useEffect(() => {
+    if (!map || searchBounds || userCoords) return;
+    map.fitBounds(CONUS_BOUNDS);
+  }, [map, searchBounds, userCoords]);
 
   // Restores whichever pin's InfoWindow was open, and the exact camera
   // position, from just before a click-through to a provider detail page
@@ -773,7 +799,11 @@ export default function MapSearch(props: MapSearchProps) {
     // functional audit: 5x "already been loaded with different parameters"
     // console warning per page load).
     <div className="relative">
-      <div className="h-[500px] md:h-[600px] w-full rounded-xl overflow-hidden touch-manipulation">
+      {/* Shorter on narrow screens -- a fixed 500px map plus its own
+          zoom/fullscreen controls often ran past the bottom of a phone's
+          viewport, especially stacked below the full search panel above
+          it, so the controls themselves needed a scroll to reach. */}
+      <div className="h-[340px] sm:h-[460px] md:h-[600px] w-full rounded-xl overflow-hidden touch-manipulation">
         <Map
           defaultCenter={DEFAULT_CENTER}
           defaultZoom={DEFAULT_ZOOM}

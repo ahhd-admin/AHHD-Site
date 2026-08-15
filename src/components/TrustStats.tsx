@@ -64,50 +64,38 @@ export default function TrustStats() {
   ];
 
   return (
-    <>
-      {/* Mobile: a single condensed strip, not three cards. Even the
-          icon-on-top card version was ~150px of "nice to know, not the
-          main event" content pushing the actual search form down the
-          page -- collapsed to one line (icon + a short self-contained
-          phrase per stat, dot-separated) instead. Card grid (sm: below)
-          is display:none here, so nothing is announced twice to a
-          screen reader -- only one of the two ever has a box. */}
-      <div
-        className="sm:hidden flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 mb-4 text-xs text-neutral-700"
-        aria-label="Directory statistics"
-      >
-        {stats.map(({ icon: Icon, short }, i) => (
-          <span key={short} className="inline-flex items-center gap-2.5">
-            {i > 0 && <span aria-hidden="true" className="text-neutral-300">&bull;</span>}
-            <span className="inline-flex items-center gap-1">
-              <Icon className="w-3.5 h-3.5 text-primary-700 flex-shrink-0" aria-hidden="true" />
-              {short}
-            </span>
+    // One condensed strip at every width, not three cards -- the card
+    // treatment (icon-on-top, bold value, border/shadow) reads as a row
+    // of buttons/CTAs, competing with the actual search form for
+    // attention and implying an action that tapping them doesn't
+    // actually perform. A plain dot-separated line (icon + a short
+    // self-contained phrase per stat) states these facts without
+    // pretending to be interactive.
+    <div
+      // Left-aligned, not centered -- matches the heading above it. Below
+      // lg, that's also the map's own left edge, since SearchHero stacks
+      // the search panel above a full-width map there (see SearchHero.tsx)
+      // -- no extra offset needed. At lg+, SearchHero switches to a
+      // side-by-side row: a 300px search panel (lg:w-[300px]) plus a
+      // 16px gap (gap-4) sits to the left of the map there, so aligning
+      // to the container's own edge would land this above the search
+      // panel instead, not the map -- reading as misaligned/a mistake
+      // against the two-column grid beneath it once that gap exists. The
+      // lg:pl-[316px] (300px + 16px) pushes it over to start exactly
+      // where the map column starts once that offset exists, matching
+      // SearchHero's own panel width + gap values.
+      className="flex flex-wrap items-center justify-start gap-x-2.5 gap-y-1 mb-4 lg:pl-[316px] text-xs sm:text-sm text-neutral-700"
+      aria-label="Directory statistics"
+    >
+      {stats.map(({ icon: Icon, short }, i) => (
+        <span key={short} className="inline-flex items-center gap-2.5">
+          {i > 0 && <span aria-hidden="true" className="text-neutral-300">&bull;</span>}
+          <span className="inline-flex items-center gap-1">
+            <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-primary-700 flex-shrink-0" aria-hidden="true" />
+            {short}
           </span>
-        ))}
-      </div>
-
-      {/* sm and up: the fuller card treatment, unchanged -- there's
-          enough width here that three cards read as real content, not
-          clutter. Equal-width columns (not flex+justify-between) so the
-          middle stat's container is genuinely centered regardless of how
-          long the other two's text is. */}
-      <div className="hidden sm:grid sm:grid-cols-3 gap-4 mb-6" aria-label="Directory statistics">
-        {stats.map(({ icon: Icon, value, label }) => (
-          <div
-            key={label}
-            className="flex items-center gap-3 bg-white border border-neutral-200 rounded-xl p-4 min-w-0"
-          >
-            <div className="w-11 h-11 md:w-12 md:h-12 bg-primary-100 rounded-full flex items-center justify-center flex-shrink-0">
-              <Icon className="w-5 h-5 md:w-6 md:h-6 text-primary-700" aria-hidden="true" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-lg md:text-xl font-heading font-bold text-navy-800 leading-tight">{value}</p>
-              <p className="text-xs md:text-sm text-neutral-600">{label}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-    </>
+        </span>
+      ))}
+    </div>
   );
 }

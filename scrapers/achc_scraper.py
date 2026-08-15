@@ -1176,7 +1176,14 @@ async def write_to_google_sheets(raw_rows: List[dict], normalized_rows: List[dic
             GOOGLE_SHEETS_URL,
             json=payload,
             headers={"Content-Type": "application/json"},
-            timeout=aiohttp.ClientTimeout(total=180),
+            # Was 180s -- confirmed live that writing ~7,400 raw + 7,400
+            # normalized rows through Apps Script's SpreadsheetApp (slow for
+            # a sheet this large) regularly ran past that. This call is also
+            # now wrapped in a non-fatal try/except by its caller (see
+            # scraper_main), so a genuinely stuck request still can't hang
+            # the job forever -- just gives a real attempt more room to
+            # actually finish before giving up.
+            timeout=aiohttp.ClientTimeout(total=480),
         ) as response:
             text = await response.text()
             print(f"Google Sheets response status: {response.status}")
@@ -1385,10 +1392,23 @@ async def main():
     else:
         print("Direct Supabase write disabled (ENABLE_DIRECT_SUPABASE=false)")
 
-    # Google Sheets: send raw rows only as audit trail (fast — no enriched payload).
+    # Google Sheets: read-only backup/audit trail only (see daily-scraper.yml)
+    # -- production reads from Supabase directly (write_to_supabase_direct
+    # above), which has already succeeded by this point. Never let a slow or
+    # failed Sheets write fail the whole run: confirmed live that writing
+    # ~7,400 raw + 7,400 normalized rows via the Apps Script endpoint
+    # regularly ran past write_to_google_sheets' client timeout, raising
+    # asyncio.TimeoutError (an empty exception message, hence the blank
+    # "ERROR:" line) and failing every nightly run for the past several days
+    # even though the actual Supabase write it happened after had already
+    # succeeded -- also silently skipping _delete_checkpoint() and the "Run
+    # complete" line below every single time.
     if GOOGLE_SHEETS_URL:
-        await write_to_google_sheets(all_rows, normalized, run_metadata)
-        print("Raw and normalized data written to Google Sheets")
+        try:
+            await write_to_google_sheets(all_rows, normalized, run_metadata)
+            print("Raw and normalized data written to Google Sheets")
+        except Exception as exc:
+            print(f"Google Sheets write failed (non-fatal — Supabase write above is what the live site reads): {exc!r}")
     else:
         print("Skipping Google Sheets write — GOOGLE_SHEETS_WEB_APP_URL is not set")
     _delete_checkpoint()
