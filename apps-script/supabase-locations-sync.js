@@ -67,16 +67,22 @@ const SELECT_COLUMNS =
 
 const SHEET_HEADERS = [
   'Organization', 'Location Name', 'Address', 'City', 'State', 'Postal Code',
-  'Phone', 'Email', 'Website', 'Service Types', 'Accrediting Body',
-  'Accreditation Status', 'Last Verified', 'Latitude', 'Longitude',
+  'Phone', 'Email', 'Website', 'Service Types', 'Home Care', 'Home Health',
+  'Hospice', 'Accrediting Body', 'Accreditation Status', 'Last Verified',
+  'Latitude', 'Longitude',
 ];
 
 // A 2-row summary block above the table (live count + last-sync time) so a
 // founder glancing at the sheet doesn't have to scroll or count rows to
 // answer "how many do we actually have right now, and is this current."
-// Row 3 is left blank as a visual spacer before the real header row.
+// Row 3 holds the slicers (see setUpSlicers) instead of being a blank
+// spacer -- 3x default height (see ROW_3_HEIGHT_MULTIPLIER below) so the
+// slicer widgets actually fit, and inside the frozen block so they stay
+// put and visible while scrolling the data below.
 const HEADER_ROW = 4;
 const DATA_START_ROW = HEADER_ROW + 1;
+const SLICER_ROW = 3;
+const ROW_3_HEIGHT_MULTIPLIER = 3;
 
 // Planned next: pull accreditation_records.expiration_date into
 // SELECT_COLUMNS/flattenLocationRow_ and add a summary line here counting
@@ -116,6 +122,11 @@ function syncLocationsFromSupabase() {
   ]);
   sheet.getRange(1, 1, 2, 1).setFontWeight('bold');
 
+  // Row 1's height is never touched, so it's a stable baseline to multiply
+  // from -- calling this every sync (not just once) stays idempotent,
+  // unlike multiplying row 3's own (already-multiplied) height again.
+  sheet.setRowHeight(SLICER_ROW, sheet.getRowHeight(1) * ROW_3_HEIGHT_MULTIPLIER);
+
   sheet.getRange(HEADER_ROW, 1, 1, SHEET_HEADERS.length).setValues([SHEET_HEADERS]).setFontWeight('bold');
   sheet.setFrozenRows(HEADER_ROW);
   if (values.length > 0) {
@@ -130,7 +141,7 @@ function syncLocationsFromSupabase() {
   }
 
   // sheet.clear() above wipes the range any existing slicers were bound
-  // to, which knocks them loose from their column-17 anchor and collapses
+  // to, which knocks them loose from their SLICER_ROW anchor and collapses
   // them to the top-left, overlapping the summary block -- confirmed live
   // after a second sync run. Re-running this (idempotent -- see its own
   // comment) on every sync, not just once ever, is what keeps them correctly
@@ -192,10 +203,21 @@ function formatVerifiedDate_(isoString) {
 }
 
 function flattenLocationRow_(loc) {
-  const serviceTypeNames = (loc.service_types || [])
+  const serviceTypeNameList = (loc.service_types || [])
     .map(function (st) { return st.service_type && st.service_type.service_type_name; })
-    .filter(Boolean)
-    .join(', ');
+    .filter(Boolean);
+  const serviceTypeNames = serviceTypeNameList.join(', ');
+
+  // Separate Yes/No columns, not just the combined Service Types text --
+  // a Sheets slicer filters on a cell's exact value, so a multi-service
+  // row's comma-joined "Home Care, Hospice" can only ever appear as its
+  // own single checkbox entry in a slicer, never let someone filter for
+  // "any Home Care location" independent of what else that row offers.
+  // These three booleans are what setUpSlicers' three service-type
+  // slicers actually filter on.
+  const hasHomeCare = serviceTypeNameList.indexOf('Home Care') !== -1 ? 'Yes' : '';
+  const hasHomeHealth = serviceTypeNameList.indexOf('Home Health') !== -1 ? 'Yes' : '';
+  const hasHospice = serviceTypeNameList.indexOf('Hospice') !== -1 ? 'Yes' : '';
 
   const currentAccreditations = (loc.accreditation_records || []).filter(function (rec) {
     return rec.is_current_record;
@@ -216,6 +238,9 @@ function flattenLocationRow_(loc) {
     loc.public_email || '',
     loc.website_url || (loc.organization && loc.organization.website_url) || '',
     serviceTypeNames,
+    hasHomeCare,
+    hasHomeHealth,
+    hasHospice,
     accreditingBodies,
     accreditationStatuses,
     formatVerifiedDate_(loc.last_verified_at),
@@ -227,9 +252,12 @@ function flattenLocationRow_(loc) {
 // Run once, manually, after the first successful sync has populated the
 // Providers sheet. Idempotent -- removes any slicers it previously added
 // before re-adding them, so re-running this after a header/column change
-// doesn't pile up duplicates. Filter criteria are left unset (an empty
-// slicer widget) -- the point is letting the founder pick values
-// interactively from the sheet UI, not pre-deciding a filter for them.
+// doesn't pile up duplicates. setHiddenValues([]) explicitly -- not a
+// bare .build() with no calls at all -- is what's needed to get a real
+// "by values, nothing hidden" criteria object; an entirely empty
+// criteria left the values checklist with nothing to populate itself
+// from when clicked live, even though the underlying column genuinely
+// has real distinct values.
 function setUpSlicers() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(PROVIDERS_SHEET_NAME);
@@ -239,28 +267,78 @@ function setUpSlicers() {
 
   sheet.getSlicers().forEach(function (slicer) { slicer.remove(); });
 
-  // Starts at HEADER_ROW, not row 1 -- the summary block above it (live
-  // count/last-updated) isn't part of the filterable table.
-  const dataRange = sheet.getRange(HEADER_ROW, 1, sheet.getLastRow() - HEADER_ROW + 1, SHEET_HEADERS.length);
-
-  // Column positions are 1-indexed and match SHEET_HEADERS above.
+  // Column positions are 1-indexed and match SHEET_HEADERS above. State
+  // and Accreditation Status filter their own text column directly; the
+  // three service types are their own Yes/No columns (see
+  // flattenLocationRow_) rather than one slicer on the combined
+  // Service Types text column, so a founder can filter "any Home Care
+  // location" independent of what else that row offers, instead of
+  // picking from a checklist of comma-joined combinations.
   const slicerColumns = [
     { name: 'State', column: 5 },
-    { name: 'Service Types', column: 10 },
-    { name: 'Accreditation Status', column: 12 },
+    { name: 'Home Care', column: 11 },
+    { name: 'Home Health', column: 12 },
+    { name: 'Hospice', column: 13 },
+    { name: 'Accreditation Status', column: 15 },
   ];
 
+  const numDataRows = sheet.getLastRow() - HEADER_ROW + 1;
+
+  // All slicers share this ONE identical range (all columns, same rows),
+  // not independent per-column ranges. Confirmed live, twice: giving each
+  // slicer its own single-column range -- even non-overlapping in
+  // columns, same rows -- throws "Two slicers can either have zero or
+  // all common rows," reproduced even on a freshly recreated sheet with no
+  // possible leftover state, so it's a hard constraint (any two slicers
+  // whose rows overlap at all must use the exact same range), not a stray
+  // Filter View. A shared full-width range with each slicer's own
+  // setColumnFilterCriteria(def.column, ...) is what worked before without
+  // that error.
+  const sharedRange = sheet.getRange(HEADER_ROW, 1, numDataRows, SHEET_HEADERS.length);
+
   slicerColumns.forEach(function (def, i) {
-    // Stacked in the columns just past the data table, not overlapping it --
-    // SHEET_HEADERS has 15 columns, so column 17 clears it with a gap.
-    const anchorRow = HEADER_ROW + i * 8;
-    const anchorColumn = 17;
-    const slicer = sheet.insertSlicer(dataRange, anchorRow, anchorColumn);
-    slicer.setColumnFilterCriteria(def.column, SpreadsheetApp.newFilterCriteria().build());
+    // Spread left-to-right across SLICER_ROW (inside the frozen block,
+    // above the header) instead of stacked past the last data column --
+    // that kept them out of view without scrolling right past all of
+    // SHEET_HEADERS' columns, and re-anchored them off-screen again after
+    // every sync. 4 columns of spacing clears each ~230px-wide slicer
+    // widget without overlap.
+    const anchorRow = SLICER_ROW;
+    const anchorColumn = 1 + i * 4;
+    const slicer = sheet.insertSlicer(sharedRange, anchorRow, anchorColumn);
+    slicer.setColumnFilterCriteria(def.column, SpreadsheetApp.newFilterCriteria().setHiddenValues([]).build());
     slicer.setTitle(def.name);
   });
 
   Logger.log('Slicers added for: %s', slicerColumns.map(function (d) { return d.name; }).join(', '));
+}
+
+// SpreadsheetApp has no API to enumerate or remove named Filter Views (the
+// "fvid=" ones creatable/visible only through the Sheets UI), and neither
+// sheet.clear() nor slicer.remove() touch them -- a stray Filter View left
+// over from earlier manual troubleshooting clicks turned out to be the
+// actual cause of the live "Two slicers can either have zero or all common
+// rows" error, not setUpSlicers' own ranges. A Filter View is bound to its
+// sheet's gid, so deleting the whole Providers sheet (not just its
+// contents) and letting syncLocationsFromSupabase() recreate it fresh --
+// a new sheet, a new gid -- is what actually clears it. Sheets refuses to
+// delete the only sheet in a spreadsheet, hence the throwaway sheet below.
+function hardResetProvidersSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const providers = ss.getSheetByName(PROVIDERS_SHEET_NAME);
+  if (!providers) {
+    Logger.log('No Providers sheet found -- nothing to delete.');
+    return;
+  }
+  if (ss.getSheets().length === 1) {
+    ss.insertSheet('__reset_temp__');
+  }
+  ss.deleteSheet(providers);
+  Logger.log(
+    'Deleted Providers sheet (any stray filter views/slicers went with it). ' +
+    'Run syncLocationsFromSupabase() next to rebuild it, then delete the ' +
+    '__reset_temp__ sheet by hand.'
+  );
 }
 
 // Run once, manually, after the sync and slicers are both confirmed working.
