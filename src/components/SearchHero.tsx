@@ -816,14 +816,24 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
     }));
 
     return (
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex items-center gap-2">
         {renderCareTypeChip({ key: 'all', label: 'All Care', selected: allServicesSelected, onClick: toggleAllServices })}
-        {/* Always present, not just at wider widths -- a plain gap read as
-            an accidental space between two unrelated groups of chips
-            rather than a deliberate "All Care vs. the 3 specific types"
-            distinction. */}
-        <span aria-hidden="true" className="text-neutral-300 select-none">|</span>
-        {typeChips.map(renderCareTypeChip)}
+        {/* A real divider bar (self-stretch, spans the row's own height),
+            not a "|" text glyph -- confirmed live: when the 3 type chips
+            below wrap to 2 lines, a glyph sized to one line of text stayed
+            pinned to the top and no longer read as spanning both lines,
+            so Hospice on its own second line looked like it belonged with
+            All Care rather than with Home Care/Home Health above it. The
+            bar's height following the row (via items-center + self-stretch)
+            keeps the two groups visually separated regardless of how the
+            right side wraps. */}
+        <span aria-hidden="true" className="self-stretch w-px bg-neutral-300" />
+        {/* Its own flex-wrap group, not part of the same wrapping row as
+            All Care -- keeps All Care a single fixed-position anchor on
+            the left while only this group reflows across lines. */}
+        <div className="flex flex-wrap gap-2">
+          {typeChips.map(renderCareTypeChip)}
+        </div>
       </div>
     );
   };
