@@ -782,42 +782,47 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   // Tap-to-toggle chips instead of checkboxes -- bigger touch targets,
   // an at-a-glance filled/outline selected state instead of squinting at
   // small checkmarks, and matches the pill style already used for
-  // service-type tags on ProviderCard. One consistent layout at every
-  // width (a plain wrapping row) instead of the previous checkbox
-  // version's separate mobile/tablet/desktop treatments -- chips don't
-  // need the indentation-implies-hierarchy convention checkboxes do, so
-  // "All Care" reads fine as just the first chip in the row, no divider
-  // needed. Selected state reads as filled/solid vs. outlined/hollow, not
-  // just a color change -- distinct enough on its own without also
-  // needing a checkmark.
+  // service-type tags on ProviderCard. Selected state reads as
+  // filled/solid vs. outlined/hollow, not just a color change -- distinct
+  // enough on its own without also needing a checkmark.
+  //
+  // All Care sits alone on its own row, the 3 specific types on the row
+  // below it -- All Care is a different kind of control (selects/clears
+  // the other three) from the three it sits among, and shared a row with
+  // them read as a fourth equal option rather than the "everything"
+  // toggle it actually is.
+  const renderCareTypeChip = (chip: { key: string; label: string; selected: boolean; onClick: () => void }) => (
+    <button
+      key={chip.key}
+      type="button"
+      onClick={chip.onClick}
+      aria-pressed={chip.selected}
+      className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold border-2 transition-colors whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-1 ${
+        chip.selected
+          ? 'bg-primary-700 border-primary-700 text-white'
+          : 'bg-white border-neutral-500 text-neutral-700 hover:border-primary-600 hover:text-primary-700'
+      }`}
+    >
+      {chip.label}
+    </button>
+  );
+
   const renderCareTypeChips = () => {
-    const chips: { key: string; label: string; selected: boolean; onClick: () => void }[] = [
-      { key: 'all', label: 'All Care', selected: allServicesSelected, onClick: toggleAllServices },
-      ...allServiceSlugs.map((slug) => ({
-        key: slug,
-        label: ALL_SERVICES[slug],
-        selected: selectedServices.includes(slug),
-        onClick: () => toggleService(slug),
-      })),
-    ];
+    const typeChips = allServiceSlugs.map((slug) => ({
+      key: slug,
+      label: ALL_SERVICES[slug],
+      selected: selectedServices.includes(slug),
+      onClick: () => toggleService(slug),
+    }));
 
     return (
-      <div className="flex flex-wrap gap-2">
-        {chips.map((chip) => (
-          <button
-            key={chip.key}
-            type="button"
-            onClick={chip.onClick}
-            aria-pressed={chip.selected}
-            className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold border-2 transition-colors whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-1 ${
-              chip.selected
-                ? 'bg-primary-700 border-primary-700 text-white'
-                : 'bg-white border-neutral-500 text-neutral-700 hover:border-primary-600 hover:text-primary-700'
-            }`}
-          >
-            {chip.label}
-          </button>
-        ))}
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-wrap gap-2">
+          {renderCareTypeChip({ key: 'all', label: 'All Care', selected: allServicesSelected, onClick: toggleAllServices })}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {typeChips.map(renderCareTypeChip)}
+        </div>
       </div>
     );
   };
