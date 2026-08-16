@@ -88,11 +88,11 @@ const ROW_3_HEIGHT_MULTIPLIER = 3;
 // whatever the label needs -- and there's no Apps Script API to read a
 // Slicer's actual rendered width back, so setUpSlicers spaces them with
 // this fixed pixel estimate via insertSlicer's offsetX rather than by
-// column position. 230px (the previous estimate) was too tight -- the
-// next slicer's icon visibly overlapped the previous one's title,
-// confirmed live.
-const SLICER_WIDTH_PX = 250;
-const SLICER_GAP_PX = 20;
+// column position. Started at 230/12, bumped once to 250/20 after the
+// next slicer's icon visibly overlapped the previous one's title, then
+// widened again by the same amount per the founder's own live check.
+const SLICER_WIDTH_PX = 270;
+const SLICER_GAP_PX = 28;
 
 // Planned next: pull accreditation_records.expiration_date into
 // SELECT_COLUMNS/flattenLocationRow_ and add a summary line here counting
