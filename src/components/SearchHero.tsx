@@ -816,13 +816,14 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
     }));
 
     return (
-      <div className="flex flex-col gap-2">
-        <div className="flex flex-wrap gap-2">
-          {renderCareTypeChip({ key: 'all', label: 'All Care', selected: allServicesSelected, onClick: toggleAllServices })}
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {typeChips.map(renderCareTypeChip)}
-        </div>
+      <div className="flex flex-wrap items-center gap-2">
+        {renderCareTypeChip({ key: 'all', label: 'All Care', selected: allServicesSelected, onClick: toggleAllServices })}
+        {/* Always present, not just at wider widths -- a plain gap read as
+            an accidental space between two unrelated groups of chips
+            rather than a deliberate "All Care vs. the 3 specific types"
+            distinction. */}
+        <span aria-hidden="true" className="text-neutral-300 select-none">|</span>
+        {typeChips.map(renderCareTypeChip)}
       </div>
     );
   };
@@ -1312,12 +1313,17 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
         };
         setUserCoords(coords);
         // GPS position is a real point, not a region -- clear any bounds
-        // left over from a previous state/city search so the map zooms in
-        // close on "near me" instead of re-fitting a stale region. Scale
-        // is set to 'address' (not a real geocode classification, just
-        // reusing its precise-point treatment) so the Radius circle still
-        // draws for "My Location" the way it always has.
+        // (and any state/city boundary outline drawn for a previous
+        // search -- confirmed live: searching Michigan, then using My
+        // Location to jump to Chicago, left Michigan's purple outline on
+        // the map since only searchBounds was being reset here) so the map
+        // zooms in close on "near me" instead of re-fitting or redrawing a
+        // stale region. Scale is set to 'address' (not a real geocode
+        // classification, just reusing its precise-point treatment) so the
+        // Radius circle still draws for "My Location" the way it always
+        // has.
         setSearchBounds(null);
+        setBoundaryPolygon(null);
         setSearchRegionScale('address');
         setHasSubmittedSearch(true);
         setSearchGeneration((n) => n + 1);

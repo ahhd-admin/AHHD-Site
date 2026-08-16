@@ -83,6 +83,13 @@ const HEADER_ROW = 4;
 const DATA_START_ROW = HEADER_ROW + 1;
 const SLICER_ROW = 3;
 const ROW_3_HEIGHT_MULTIPLIER = 3;
+// Slicer widgets render at a fixed ~230px width regardless of title
+// length or the column grid under them (there's no Apps Script API to
+// read a Slicer's actual rendered width back), so setUpSlicers spaces
+// them with this fixed pixel estimate via insertSlicer's offsetX rather
+// than by column position.
+const SLICER_WIDTH_PX = 230;
+const SLICER_GAP_PX = 12;
 
 // Planned next: pull accreditation_records.expiration_date into
 // SELECT_COLUMNS/flattenLocationRow_ and add a summary line here counting
@@ -296,16 +303,16 @@ function setUpSlicers() {
   // that error.
   const sharedRange = sheet.getRange(HEADER_ROW, 1, numDataRows, SHEET_HEADERS.length);
 
+  // All anchored at the same cell (row SLICER_ROW, column 1), spaced by a
+  // pixel offsetX instead of by column position -- a slicer widget's
+  // rendered width has nothing to do with the (very unevenly autoResized)
+  // column widths underneath it, so column-based anchoring either
+  // overlapped or left odd gaps depending on what those columns' content
+  // happened to need. offsetX packs them near-edge-to-edge using
+  // SLICER_WIDTH_PX + SLICER_GAP_PX per step, regardless of the grid below.
   slicerColumns.forEach(function (def, i) {
-    // Spread left-to-right across SLICER_ROW (inside the frozen block,
-    // above the header) instead of stacked past the last data column --
-    // that kept them out of view without scrolling right past all of
-    // SHEET_HEADERS' columns, and re-anchored them off-screen again after
-    // every sync. 4 columns of spacing clears each ~230px-wide slicer
-    // widget without overlap.
-    const anchorRow = SLICER_ROW;
-    const anchorColumn = 1 + i * 4;
-    const slicer = sheet.insertSlicer(sharedRange, anchorRow, anchorColumn);
+    const offsetX = i * (SLICER_WIDTH_PX + SLICER_GAP_PX);
+    const slicer = sheet.insertSlicer(sharedRange, SLICER_ROW, 1, offsetX, 0);
     slicer.setColumnFilterCriteria(def.column, SpreadsheetApp.newFilterCriteria().setHiddenValues([]).build());
     slicer.setTitle(def.name);
   });
@@ -347,15 +354,24 @@ function createDailyTrigger() {
     .filter(function (t) { return t.getHandlerFunction() === 'syncLocationsFromSupabase'; })
     .forEach(function (t) { ScriptApp.deleteTrigger(t); });
 
-  // Offset from the scraper's own 6:00 AM UTC run (daily-scraper.yml) so
-  // this always pulls data from a run that's already finished, not one
-  // still in flight.
+  // The scraper (daily-scraper.yml) starts at 6:00 AM UTC and has a
+  // 120-minute timeout, so it can legitimately still be running as late as
+  // 8:00 AM UTC in a worst case -- an earlier 8:00 AM UTC trigger here
+  // left only that exact 2-hour margin, meaning a slow scraper run could
+  // race this and pull yesterday's data from Supabase instead of the
+  // night's fresh write (not a crash either way -- Supabase would just
+  // return whatever was already committed -- but stale, silently). 8:00 AM
+  // America/New_York is ~12:00-13:00 UTC depending on DST, a 6-7 hour
+  // margin that comfortably clears even a worst-case scraper run, and
+  // Apps Script's own DST handling for named timezones (unlike a fixed
+  // UTC hour) means this stays 8:00 AM local through the fall/spring
+  // transitions without needing a manual adjustment.
   ScriptApp.newTrigger('syncLocationsFromSupabase')
     .timeBased()
     .atHour(8)
     .everyDays(1)
-    .inTimezone('Etc/UTC')
+    .inTimezone('America/New_York')
     .create();
 
-  Logger.log('Daily trigger created: syncLocationsFromSupabase at 08:00 UTC');
+  Logger.log('Daily trigger created: syncLocationsFromSupabase at 08:00 America/New_York');
 }
