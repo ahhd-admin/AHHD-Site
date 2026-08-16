@@ -1558,7 +1558,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
           <button
             onClick={handleGeolocation}
             disabled={gettingLocation}
-            className="btn-outline flex-1 sm:min-w-[135px] px-3 h-[44px] flex items-center justify-center gap-1.5 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+            className="btn-outline flex-1 sm:min-w-[135px] lg:min-w-0 px-3 h-[44px] flex items-center justify-center gap-1.5 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
             aria-label="Use my location"
             title="Use my location"
           >
@@ -1568,7 +1568,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
 
           <button
             onClick={handleSearch}
-            className="btn-primary flex-1 sm:min-w-[135px] px-3 h-[44px] flex items-center justify-center gap-1.5 whitespace-nowrap"
+            className="btn-primary flex-1 sm:min-w-[135px] lg:min-w-0 px-3 h-[44px] flex items-center justify-center gap-1.5 whitespace-nowrap"
           >
             <Search className="w-4 h-4" />
             <span className="text-sm">Search</span>
