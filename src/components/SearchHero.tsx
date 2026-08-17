@@ -113,13 +113,16 @@ const initialRadiusParam = initialSearchParams.get('radius');
 
 function SearchHeroContent({ onSearch }: SearchHeroProps) {
   const [location, setLocation] = useState(initialLocationParam);
-  // Defaults to every service checked -- one fewer thing to set up before
-  // searching. Nothing shows until a location is actually searched
-  // regardless (hasSubmittedSearch below), so this doesn't skip that
-  // gate; it just means the common case (search a location, see
-  // everything) takes one less click. ensureServicesSelected() still
-  // covers the edge case of someone manually unchecking every box and
-  // then submitting.
+  // Defaults to nothing checked -- chips that look pre-selected read as
+  // an active filter already in effect, and someone tapping around
+  // ("are these on? let me check what's off") could misclick one back
+  // off without realizing it was ever the default. Starting empty and
+  // relying on ensureServicesSelected() (below) to fill in "search
+  // everything" the moment Search is actually pressed gets the same
+  // "one fewer thing to set up" outcome without an ambiguous-looking
+  // pre-selected state -- and costs nothing extra, since nothing shows
+  // until a location is actually searched regardless (hasSubmittedSearch
+  // below).
   const [selectedServices, setSelectedServices] = useState<string[]>(
     // Validated against ALL_SERVICES, not passed straight through --
     // `care` comes from the URL query string, and the query below skips
@@ -131,7 +134,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
     // checkbox UI itself never offering them.
     initialCareParam
       ? initialCareParam.split(',').filter((slug) => slug in ALL_SERVICES)
-      : Object.keys(ALL_SERVICES)
+      : []
   );
   const [viewMode, setViewMode] = useState<'map' | 'list'>(
     initialSearchParams.get('view') === 'list' ? 'list' : 'map'
@@ -764,12 +767,13 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   // (by design -- see loadLocations), which reads as "the search is
   // broken" rather than "you forgot to pick something." Since a location
   // search with no care type filter at all is a perfectly reasonable
-  // thing to want, submitting now falls back to searching every service
-  // instead -- and visibly checks those boxes, so the UI honestly
-  // reflects what's actually being searched rather than a silent
-  // fallback. Returns the effective list synchronously (setSelectedServices
-  // won't be reflected until the next render) for immediate use in the
-  // same submit.
+  // thing to want -- and is now the actual starting state, not just an
+  // edge case someone stumbles into by unchecking every box -- submitting
+  // falls back to searching every service instead, and visibly checks
+  // those boxes so the UI honestly reflects what's actually being
+  // searched rather than a silent fallback. Returns the effective list
+  // synchronously (setSelectedServices won't be reflected until the next
+  // render) for immediate use in the same submit.
   const ensureServicesSelected = (): string[] => {
     if (selectedServices.length > 0) return selectedServices;
     setSelectedServices(allServiceSlugs);
