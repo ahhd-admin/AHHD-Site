@@ -797,16 +797,16 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
       type="button"
       onClick={chip.onClick}
       aria-pressed={chip.selected}
-      className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold border-2 border-primary-700 transition-colors whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-1 ${
+      className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold border-2 border-navy-800 transition-colors whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-1 ${
         chip.selected
-          ? // Border color stays the same primary-700 in both states now
-            // (moved to the shared classString above) -- only the fill
-            // signals selection, rather than switching border color too.
-            // primary-600 fill read as too dark against near-black text
-            // (only 4.75:1, barely over the 4.5 AA floor) -- primary-400
-            // with navy-800 text measures 6.38:1, comfortably clear, and
-            // matches the same fill/text pairing already used for badges
-            // elsewhere (ProviderCard, MapSearch use primary-100/navy-800).
+          ? // primary-400 fill only measures 2.31:1 against a white page
+            // background on its own -- short of the 3:1 UI-boundary
+            // minimum (WCAG 1.4.11) -- so a same-color or missing border
+            // isn't an option here; the border has to actually contrast
+            // against the fill. navy-800 clears 3:1 against both this
+            // fill (6.38:1) and the unselected white fill (14.71:1), and
+            // matches this state's own text color (6.38:1 for the text
+            // itself, comfortably past the 4.5:1 AA floor).
             'bg-primary-400 text-navy-800'
           : 'bg-white text-neutral-700 hover:bg-primary-50'
       }`}
