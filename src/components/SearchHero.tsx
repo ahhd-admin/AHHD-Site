@@ -1501,7 +1501,20 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
           again at lg itself, where the panel becomes a fixed 300px
           sidebar next to the map -- too narrow for one row there too. */}
       <div className="flex flex-col sm:flex-row lg:flex-col gap-2">
-        <div className="relative sm:flex-1 lg:flex-auto min-w-0">
+        {/* This outer wrapper (not "relative" itself) is the actual flex
+            item in the row above -- the inner "relative" div below is
+            scoped to just the icon/input/suggestions-dropdown so the
+            icon's top-1/2 centering is never affected by the error
+            message's height. It used to live inside that relative div,
+            so the error's extra line grew the div taller and dragged
+            the icon's vertical center down with it (confirmed live: the
+            icon ended up sitting on the input's bottom border instead
+            of centered on the text). A plain block-level <p> after the
+            inner div now stacks below it in normal flow regardless of
+            whether the outer container is row or column, without
+            needing order/wrap tricks. */}
+        <div className="sm:flex-1 lg:flex-auto min-w-0">
+        <div className="relative">
           <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500 w-4 h-4 z-10 pointer-events-none" aria-hidden="true" />
           <input
             ref={inputRef}
@@ -1567,11 +1580,6 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             }`}
             autoComplete="off"
           />
-          {locationError && (
-            <p id="location-search-error" role="alert" className="mt-1.5 text-sm text-error-700">
-              Enter a city, state, address, or ZIP to search
-            </p>
-          )}
           {showSuggestions && suggestions.length > 0 && (
             // Was border-2 border-neutral-500 -- identical border weight/
             // color to the input field directly above it, which read as a
@@ -1603,6 +1611,12 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
               ))}
             </div>
           )}
+        </div>
+        {locationError && (
+          <p id="location-search-error" role="alert" className="mt-1.5 text-sm text-error-700">
+            Enter a city, state, address, or ZIP to search
+          </p>
+        )}
         </div>
 
         <div className="flex gap-2 sm:flex-shrink-0 lg:flex-shrink lg:w-full">
