@@ -54,7 +54,7 @@ export default function ProviderCard({ location, distance }: ProviderCardProps) 
     >
       {isEnhanced && (
         <div className="absolute -top-2.5 -right-2.5 bg-gradient-to-br from-amber-400 to-amber-500 text-neutral-900 px-2.5 py-1 rounded-full flex items-center gap-1.5 text-xs font-bold shadow-lg z-10">
-          <Star className="w-3 h-3 fill-current" />
+          <Star className="w-3 h-3 fill-current" aria-hidden="true" />
           <span>Enhanced</span>
         </div>
       )}
@@ -77,7 +77,7 @@ export default function ProviderCard({ location, distance }: ProviderCardProps) 
                   and the dark navy provider-page banner (see
                   ProviderDetailPage.tsx), so both use the same pair. */}
               <div className="bg-success-100 text-success-900 px-2 py-1 rounded-full flex items-center gap-1 text-xs font-semibold whitespace-nowrap">
-                <Shield className="w-3 h-3" />
+                <Shield className="w-3 h-3" aria-hidden="true" />
                 <span>Accredited</span>
               </div>
             </div>
@@ -90,7 +90,7 @@ export default function ProviderCard({ location, distance }: ProviderCardProps) 
           // badge but still readable at a glance rather than buried in the
           // detail page only.
           <div className="flex items-center gap-1 mb-2.5 text-success-700">
-            <BadgeCheck className="w-3.5 h-3.5 flex-shrink-0" />
+            <BadgeCheck className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />
             <span className="text-xs font-medium">{verifiedLabel}</span>
           </div>
         )}
@@ -114,7 +114,7 @@ export default function ProviderCard({ location, distance }: ProviderCardProps) 
           )}
 
           <div className="flex items-start gap-1.5 text-neutral-700">
-            <MapPin className="w-4 h-4 text-neutral-500 flex-shrink-0 mt-0.5" />
+            <MapPin className="w-4 h-4 text-neutral-500 flex-shrink-0 mt-0.5" aria-hidden="true" />
             <span className="text-sm">
               {location.city}, {location.state} {location.postal_code}
               {actualDistance && <span className="ml-2 text-primary-600 font-semibold">({formatDistance(actualDistance)})</span>}
@@ -123,7 +123,7 @@ export default function ProviderCard({ location, distance }: ProviderCardProps) 
 
           {location.public_phone && (
             <div className="flex items-center gap-1.5 text-neutral-700">
-              <Phone className="w-4 h-4 text-neutral-500 flex-shrink-0" />
+              <Phone className="w-4 h-4 text-neutral-500 flex-shrink-0" aria-hidden="true" />
               <span className="text-sm text-neutral-700">
                 {location.public_phone}
               </span>
@@ -132,7 +132,7 @@ export default function ProviderCard({ location, distance }: ProviderCardProps) 
 
           {(location.website_url || location.organization?.website_url) && (
             <div className="flex items-center gap-1.5 text-neutral-700">
-              <Globe className="w-4 h-4 text-neutral-500 flex-shrink-0" />
+              <Globe className="w-4 h-4 text-neutral-500 flex-shrink-0" aria-hidden="true" />
               <span className="text-sm text-primary-600 group-hover:text-primary-700 font-medium truncate">
                 Visit Website
               </span>
@@ -141,9 +141,9 @@ export default function ProviderCard({ location, distance }: ProviderCardProps) 
         </div>
 
         {activeAccreditations.length > 0 && (
-          <div className="pt-2.5 border-t border-neutral-200">
+          <div className="pt-2.5 border-t border-neutral-500">
             <div className="flex items-center gap-1.5 mb-1.5">
-              <Award className="w-3.5 h-3.5 text-neutral-500" />
+              <Award className="w-3.5 h-3.5 text-neutral-500" aria-hidden="true" />
               <span className="text-xs font-semibold text-neutral-600 uppercase tracking-wide">
                 Accredited By
               </span>
@@ -152,7 +152,7 @@ export default function ProviderCard({ location, distance }: ProviderCardProps) 
               {activeAccreditations.map((accreditation) => (
                 <span
                   key={accreditation.accreditation_id}
-                  className="inline-block bg-neutral-100 text-neutral-800 px-2 py-0.5 rounded-md text-xs font-medium border border-neutral-200"
+                  className="inline-block bg-neutral-100 text-neutral-800 px-2 py-0.5 rounded-md text-xs font-medium border border-neutral-500"
                 >
                   {accreditation.accrediting_body}
                 </span>
@@ -161,7 +161,7 @@ export default function ProviderCard({ location, distance }: ProviderCardProps) 
           </div>
         )}
 
-        <div className="mt-2.5 pt-2.5 border-t border-neutral-200">
+        <div className="mt-2.5 pt-2.5 border-t border-neutral-500">
           <span className="text-primary-600 group-hover:text-primary-700 font-semibold text-sm flex items-center justify-between">
             View Full Details
             <span aria-hidden="true" className="transform group-hover:translate-x-1 transition-transform">→</span>

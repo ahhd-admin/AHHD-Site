@@ -5,7 +5,7 @@ export default function Header() {
   const currentPath = window.location.pathname;
 
   return (
-    <header className="bg-white border-b border-neutral-200 sticky top-0 z-50 shadow-sm">
+    <header className="bg-white border-b border-neutral-500 sticky top-0 z-50 shadow-sm">
       <nav className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-20">
           <div className="flex items-center">
@@ -65,7 +65,7 @@ export default function Header() {
         </div>
 
         {mobileMenuOpen && (
-          <div className="md:hidden py-4 border-t border-neutral-200">
+          <div className="md:hidden py-4 border-t border-neutral-500">
             <div className="flex flex-col space-y-4">
               <a
                 href="/"

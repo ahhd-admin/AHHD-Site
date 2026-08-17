@@ -60,7 +60,7 @@ export default function ManageOrganizations() {
                 onClick={handleSignOut}
                 className="bg-slate-700 text-white hover:bg-slate-600 px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2"
               >
-                <LogOut className="w-4 h-4" />
+                <LogOut className="w-4 h-4" aria-hidden="true" />
                 Sign Out
               </button>
             </div>
@@ -68,16 +68,16 @@ export default function ManageOrganizations() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <main id="main-content" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="mb-6">
           <div className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-neutral-400 w-5 h-5" />
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-neutral-500 w-5 h-5" aria-hidden="true" />
             <input
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Search organizations..."
-              className="w-full pl-12 pr-4 py-3 border-2 border-neutral-300 rounded-xl focus:outline-none focus:ring-4 focus:ring-primary-200 focus:border-primary-500 transition-all"
+              className="w-full pl-12 pr-4 py-3 border-2 border-neutral-500 rounded-xl focus:outline-none focus:ring-4 focus:ring-primary-200 focus:border-primary-500 transition-all"
             />
           </div>
         </div>
@@ -88,7 +88,7 @@ export default function ManageOrganizations() {
           </div>
         ) : filteredOrgs.length === 0 ? (
           <div className="card p-8 text-center">
-            <Building2 className="w-12 h-12 text-neutral-400 mx-auto mb-4" />
+            <Building2 className="w-12 h-12 text-neutral-400 mx-auto mb-4" aria-hidden="true" />
             <p className="text-neutral-600">No organizations found</p>
           </div>
         ) : (
@@ -97,7 +97,7 @@ export default function ManageOrganizations() {
               <div key={org.organization_id} className="card p-6 hover:shadow-lg transition-shadow">
                 <div className="flex items-start gap-4">
                   <div className="p-3 bg-navy-100 rounded-lg flex-shrink-0">
-                    <Building2 className="w-6 h-6 text-navy-600" />
+                    <Building2 className="w-6 h-6 text-navy-600" aria-hidden="true" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <h3 className="text-lg font-heading font-semibold text-navy-800 mb-2 truncate">

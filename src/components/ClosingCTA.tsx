@@ -28,7 +28,7 @@ export default function ClosingCTA() {
             onClick={scrollToSearch}
             className="btn-secondary bg-white text-neutral-900 hover:bg-neutral-100 inline-flex items-center gap-2 font-bold shadow-md"
           >
-            <Search className="w-4 h-4" />
+            <Search className="w-4 h-4" aria-hidden="true" />
             Search Now
           </button>
 

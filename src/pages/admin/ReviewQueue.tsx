@@ -101,7 +101,7 @@ export default function ReviewQueue() {
                 onClick={handleSignOut}
                 className="bg-slate-700 text-white hover:bg-slate-600 px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2"
               >
-                <LogOut className="w-4 h-4" />
+                <LogOut className="w-4 h-4" aria-hidden="true" />
                 Sign Out
               </button>
             </div>
@@ -109,14 +109,14 @@ export default function ReviewQueue() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <main id="main-content" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         {loading ? (
           <div className="flex items-center justify-center py-20">
             <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-primary-200 border-t-primary-600"></div>
           </div>
         ) : locations.length === 0 ? (
           <div className="card p-12 text-center">
-            <AlertCircle className="w-16 h-16 text-neutral-400 mx-auto mb-4" />
+            <AlertCircle className="w-16 h-16 text-neutral-400 mx-auto mb-4" aria-hidden="true" />
             <h2 className="text-xl font-heading font-semibold text-navy-800 mb-2">No Items to Review</h2>
             <p className="text-neutral-600">All listings are up to date</p>
           </div>
@@ -175,23 +175,23 @@ export default function ReviewQueue() {
                     rel="noopener noreferrer"
                     className="text-sm text-primary-600 hover:text-primary-700 font-medium inline-flex items-center gap-1 mb-4"
                   >
-                    Visit Website <ExternalLink className="w-3 h-3" />
+                    Visit Website <ExternalLink className="w-3 h-3" aria-hidden="true" />
                   </a>
                 )}
 
-                <div className="flex gap-3 pt-4 border-t border-neutral-200">
+                <div className="flex gap-3 pt-4 border-t border-neutral-500">
                   <button
                     onClick={() => handleApprove(location.location_id)}
                     className="flex-1 px-4 py-2.5 bg-success-600 text-white rounded-lg hover:bg-success-700 transition-colors font-medium flex items-center justify-center gap-2"
                   >
-                    <CheckCircle2 className="w-4 h-4" />
+                    <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
                     Approve & Publish
                   </button>
                   <button
                     onClick={() => handleReject(location.location_id)}
                     className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium flex items-center justify-center gap-2"
                   >
-                    <XCircle className="w-4 h-4" />
+                    <XCircle className="w-4 h-4" aria-hidden="true" />
                     Reject
                   </button>
                 </div>

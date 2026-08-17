@@ -18,9 +18,11 @@ export default function InfoTooltip({ content }: InfoTooltipProps) {
           e.preventDefault();
           setShow(!show);
         }}
-        className="text-neutral-400 hover:text-neutral-600 transition-colors ml-1"
+        className="text-neutral-500 hover:text-neutral-600 transition-colors ml-1"
+        aria-label="More information"
+        aria-expanded={show}
       >
-        <Info className="w-4 h-4" />
+        <Info className="w-4 h-4" aria-hidden="true" />
       </button>
       {show && (
         <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-64 bg-navy-800 text-white text-xs rounded-lg p-3 shadow-xl z-50">

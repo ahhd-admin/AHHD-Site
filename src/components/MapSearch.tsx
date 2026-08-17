@@ -609,9 +609,9 @@ function MapContent({ locations, userCoords, searchBounds, boundaryPolygon, boun
                   type="button"
                   onClick={() => setSelectedLocationId(null)}
                   aria-label="Close"
-                  className="flex-shrink-0 text-neutral-400 hover:text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-600 rounded"
+                  className="flex-shrink-0 text-neutral-500 hover:text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-600 rounded"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4" aria-hidden="true">
                     <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
                   </svg>
                 </button>
@@ -648,7 +648,7 @@ function MapContent({ locations, userCoords, searchBounds, boundaryPolygon, boun
               )}
               {verifiedLabel && (
                 <p className="flex items-center gap-1 text-[11px] font-medium text-success-700 mb-1.5">
-                  <BadgeCheck className="w-3 h-3 flex-shrink-0" />
+                  <BadgeCheck className="w-3 h-3 flex-shrink-0" aria-hidden="true" />
                   {verifiedLabel}
                 </p>
               )}
@@ -729,7 +729,7 @@ function ResultsList({ locations, hoveredLocationId, setHoveredLocationId }: Res
             className={`w-full text-left p-2.5 md:p-3 bg-white rounded-lg border transition-all group active:scale-98 ${
               hoveredLocationId === location.location_id
                 ? 'border-primary-400 shadow-md'
-                : 'border-neutral-200'
+                : 'border-neutral-500'
             } hover:border-primary-400 hover:shadow-md active:border-primary-500`}
           >
             <div className="flex items-start gap-2 md:gap-3">
@@ -766,7 +766,7 @@ function ResultsList({ locations, hoveredLocationId, setHoveredLocationId }: Res
                   const verifiedLabel = formatVerifiedDate(getVerifiedDate(location));
                   return verifiedLabel ? (
                     <p className="flex items-center gap-1 text-[11px] font-medium text-success-700 mt-1">
-                      <BadgeCheck className="w-3 h-3 flex-shrink-0" />
+                      <BadgeCheck className="w-3 h-3 flex-shrink-0" aria-hidden="true" />
                       {verifiedLabel}
                     </p>
                   ) : null;

@@ -90,7 +90,7 @@ export default function ProviderDetailPage({ locationId }: ProviderDetailPagePro
     return (
       <div className="min-h-screen flex flex-col">
         <Header />
-        <main className="flex-1 flex items-center justify-center py-20">
+        <main id="main-content" className="flex-1 flex items-center justify-center py-20">
           <div className="text-center" role="status">
             <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-primary-200 border-t-primary-600 mb-4" aria-hidden="true"></div>
             <p className="text-neutral-600">Loading provider details...</p>
@@ -105,7 +105,7 @@ export default function ProviderDetailPage({ locationId }: ProviderDetailPagePro
     return (
       <div className="min-h-screen flex flex-col">
         <Header />
-        <main className="flex-1 flex items-center justify-center py-20">
+        <main id="main-content" className="flex-1 flex items-center justify-center py-20">
           <div className="text-center max-w-md">
             <h1 className="text-2xl font-heading font-semibold text-navy-800 mb-4">
               Provider Not Found
@@ -167,11 +167,11 @@ export default function ProviderDetailPage({ locationId }: ProviderDetailPagePro
       <script type="application/ld+json">{JSON.stringify(structuredData)}</script>
       <Header />
 
-      <main className="flex-1">
+      <main id="main-content" className="flex-1">
         <div className="bg-navy-700 text-white py-12 relative">
           {isEnhanced && (
             <div className="absolute top-6 right-8 bg-gradient-to-br from-amber-400 to-amber-500 text-neutral-900 px-4 py-2 rounded-full flex items-center gap-2 text-sm font-bold shadow-lg">
-              <Star className="w-4 h-4 fill-current" />
+              <Star className="w-4 h-4 fill-current" aria-hidden="true" />
               <span>Enhanced Listing</span>
             </div>
           )}
@@ -224,7 +224,7 @@ export default function ProviderDetailPage({ locationId }: ProviderDetailPagePro
                       (Earlier version was solid success-500/white text,
                       which measured 3.99:1 -- below the 4.5:1 AA floor.) */}
                   <div className="bg-success-100 text-success-900 px-4 py-2 rounded-lg flex items-center gap-2">
-                    <Shield className="w-5 h-5" />
+                    <Shield className="w-5 h-5" aria-hidden="true" />
                     <span className="font-medium">Accredited</span>
                   </div>
                 </div>
@@ -239,7 +239,7 @@ export default function ProviderDetailPage({ locationId }: ProviderDetailPagePro
               {isEnhanced && enhancedDescription && (
                 <section className="card p-8 bg-gradient-to-br from-amber-50 to-amber-100 border-2 border-amber-200">
                   <div className="flex items-center gap-3 mb-3">
-                    <Star className="w-6 h-6 text-amber-600 fill-current flex-shrink-0" />
+                    <Star className="w-6 h-6 text-amber-600 fill-current flex-shrink-0" aria-hidden="true" />
                     <h2 className="text-2xl font-heading font-semibold text-navy-800">
                       About This Provider
                     </h2>
@@ -258,7 +258,7 @@ export default function ProviderDetailPage({ locationId }: ProviderDetailPagePro
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     {specialties.split(',').map((specialty, index) => (
                       <div key={index} className="flex items-center gap-3 bg-neutral-50 px-4 py-3 rounded-lg">
-                        <CheckCircle className="w-5 h-5 text-primary-600 flex-shrink-0" />
+                        <CheckCircle className="w-5 h-5 text-primary-600 flex-shrink-0" aria-hidden="true" />
                         <span className="font-medium text-navy-800">{specialty.trim()}</span>
                       </div>
                     ))}
@@ -273,7 +273,7 @@ export default function ProviderDetailPage({ locationId }: ProviderDetailPagePro
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {location.service_types?.map((service) => (
                     <div key={service.service_type_id} className="flex items-start gap-3">
-                      <CheckCircle className="w-6 h-6 text-primary-600 flex-shrink-0 mt-0.5" />
+                      <CheckCircle className="w-6 h-6 text-primary-600 flex-shrink-0 mt-0.5" aria-hidden="true" />
                       <div>
                         <p className="font-medium text-navy-800">{service.service_type_name}</p>
                         {service.description && (
@@ -288,14 +288,14 @@ export default function ProviderDetailPage({ locationId }: ProviderDetailPagePro
               {activeAccreditations.length > 0 && (
                 <section className="card p-8">
                   <h2 className="text-2xl font-heading font-semibold text-navy-800 mb-6 flex items-center gap-2">
-                    <Award className="w-6 h-6 text-primary-600" />
+                    <Award className="w-6 h-6 text-primary-600" aria-hidden="true" />
                     Accreditation Details
                   </h2>
                   <div className="space-y-4">
                     {activeAccreditations.map((accreditation) => (
                       <div
                         key={accreditation.accreditation_id}
-                        className="bg-neutral-50 rounded-lg p-6 border border-neutral-200"
+                        className="bg-neutral-50 rounded-lg p-6 border border-neutral-500"
                       >
                         <div className="flex items-start justify-between mb-3">
                           <div>
@@ -324,7 +324,7 @@ export default function ProviderDetailPage({ locationId }: ProviderDetailPagePro
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
                           {accreditation.effective_date && (
                             <div className="flex items-center gap-2 text-sm text-neutral-700">
-                              <Calendar className="w-4 h-4 text-neutral-500" />
+                              <Calendar className="w-4 h-4 text-neutral-500" aria-hidden="true" />
                               <span>
                                 Effective: {new Date(accreditation.effective_date).toLocaleDateString()}
                               </span>
@@ -332,7 +332,7 @@ export default function ProviderDetailPage({ locationId }: ProviderDetailPagePro
                           )}
                           {accreditation.expiration_date && (
                             <div className="flex items-center gap-2 text-sm text-neutral-700">
-                              <Calendar className="w-4 h-4 text-neutral-500" />
+                              <Calendar className="w-4 h-4 text-neutral-500" aria-hidden="true" />
                               <span>
                                 Expires: {new Date(accreditation.expiration_date).toLocaleDateString()}
                               </span>
@@ -364,7 +364,7 @@ export default function ProviderDetailPage({ locationId }: ProviderDetailPagePro
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         {location.insurance_accepted.map((insurance, index) => (
                           <div key={index} className="flex items-center gap-3 bg-neutral-50 px-4 py-3 rounded-lg">
-                            <CheckCircle className="w-5 h-5 text-success-600 flex-shrink-0" />
+                            <CheckCircle className="w-5 h-5 text-success-600 flex-shrink-0" aria-hidden="true" />
                             <span className="font-medium text-navy-800">{insurance}</span>
                           </div>
                         ))}
@@ -388,7 +388,7 @@ export default function ProviderDetailPage({ locationId }: ProviderDetailPagePro
                     <div className="space-y-4">
                       {location.years_in_business && (
                         <div className="flex items-center gap-3">
-                          <Award className="w-5 h-5 text-primary-600 flex-shrink-0" />
+                          <Award className="w-5 h-5 text-primary-600 flex-shrink-0" aria-hidden="true" />
                           <span className="text-neutral-700">
                             <span className="font-semibold text-navy-800">{location.years_in_business}</span> years in business
                           </span>
@@ -397,7 +397,7 @@ export default function ProviderDetailPage({ locationId }: ProviderDetailPagePro
 
                       {location.availability_24_7 && (
                         <div className="flex items-center gap-3">
-                          <CheckCircle className="w-5 h-5 text-success-600 flex-shrink-0" />
+                          <CheckCircle className="w-5 h-5 text-success-600 flex-shrink-0" aria-hidden="true" />
                           <span className="font-medium text-navy-800">24/7 availability</span>
                         </div>
                       )}
@@ -405,7 +405,7 @@ export default function ProviderDetailPage({ locationId }: ProviderDetailPagePro
                       {location.languages_spoken && location.languages_spoken.length > 0 && (
                         <div>
                           <div className="flex items-start gap-3 mb-2">
-                            <Globe className="w-5 h-5 text-primary-600 flex-shrink-0 mt-0.5" />
+                            <Globe className="w-5 h-5 text-primary-600 flex-shrink-0 mt-0.5" aria-hidden="true" />
                             <span className="font-semibold text-navy-800">Languages Spoken:</span>
                           </div>
                           <div className="ml-8 flex flex-wrap gap-2">
@@ -421,13 +421,13 @@ export default function ProviderDetailPage({ locationId }: ProviderDetailPagePro
                       {location.special_programs && location.special_programs.length > 0 && (
                         <div>
                           <div className="flex items-start gap-3 mb-2">
-                            <Star className="w-5 h-5 text-primary-600 flex-shrink-0 mt-0.5" />
+                            <Star className="w-5 h-5 text-primary-600 flex-shrink-0 mt-0.5" aria-hidden="true" />
                             <span className="font-semibold text-navy-800">Special Programs:</span>
                           </div>
                           <div className="ml-8 space-y-2">
                             {location.special_programs.map((program, index) => (
                               <div key={index} className="flex items-center gap-2">
-                                <CheckCircle className="w-4 h-4 text-primary-600 flex-shrink-0" />
+                                <CheckCircle className="w-4 h-4 text-primary-600 flex-shrink-0" aria-hidden="true" />
                                 <span className="text-neutral-700">{program}</span>
                               </div>
                             ))}
@@ -456,7 +456,7 @@ export default function ProviderDetailPage({ locationId }: ProviderDetailPagePro
                     className="btn-secondary bg-white text-neutral-900 hover:bg-neutral-100 w-full flex items-center justify-center gap-2 font-bold shadow-md"
                   >
                     {callToActionText}
-                    <ExternalLink className="w-4 h-4" />
+                    <ExternalLink className="w-4 h-4" aria-hidden="true" />
                   </a>
                 </div>
               )}
@@ -468,7 +468,7 @@ export default function ProviderDetailPage({ locationId }: ProviderDetailPagePro
 
                 <div className="space-y-4">
                   <div className="flex items-start gap-3">
-                    <MapPin className="w-5 h-5 text-neutral-500 flex-shrink-0 mt-1" />
+                    <MapPin className="w-5 h-5 text-neutral-500 flex-shrink-0 mt-1" aria-hidden="true" />
                     <div className="text-neutral-700">
                       <p>{location.address_line_1}</p>
                       {location.address_line_2 && <p>{location.address_line_2}</p>}
@@ -480,7 +480,7 @@ export default function ProviderDetailPage({ locationId }: ProviderDetailPagePro
 
                   {location.public_phone && (
                     <div className="flex items-center gap-3">
-                      <Phone className="w-5 h-5 text-neutral-500 flex-shrink-0" />
+                      <Phone className="w-5 h-5 text-neutral-500 flex-shrink-0" aria-hidden="true" />
                       <a
                         href={`tel:${location.public_phone}`}
                         className="text-primary-600 hover:text-primary-700 font-medium"
@@ -492,7 +492,7 @@ export default function ProviderDetailPage({ locationId }: ProviderDetailPagePro
 
                   {location.public_email && (
                     <div className="flex items-center gap-3">
-                      <Mail className="w-5 h-5 text-neutral-500 flex-shrink-0" />
+                      <Mail className="w-5 h-5 text-neutral-500 flex-shrink-0" aria-hidden="true" />
                       <a
                         href={`mailto:${location.public_email}`}
                         className="text-primary-600 hover:text-primary-700 font-medium break-all"
@@ -504,7 +504,7 @@ export default function ProviderDetailPage({ locationId }: ProviderDetailPagePro
 
                   {(location.website_url || location.organization?.website_url) && (
                     <div className="flex items-center gap-3">
-                      <Globe className="w-5 h-5 text-neutral-500 flex-shrink-0" />
+                      <Globe className="w-5 h-5 text-neutral-500 flex-shrink-0" aria-hidden="true" />
                       <a
                         href={location.website_url || location.organization?.website_url}
                         target="_blank"
@@ -526,7 +526,7 @@ export default function ProviderDetailPage({ locationId }: ProviderDetailPagePro
                     way everywhere: source_last_seen_at (the nightly
                     scraper's actual last-confirmed-at-source run) first. */}
                 {formatVerifiedDate(getVerifiedDate(location)) && (
-                  <div className="mt-6 pt-6 border-t border-neutral-200">
+                  <div className="mt-6 pt-6 border-t border-neutral-500">
                     <p className="text-sm text-neutral-600">
                       {formatVerifiedDate(getVerifiedDate(location))}
                     </p>
@@ -554,7 +554,7 @@ export default function ProviderDetailPage({ locationId }: ProviderDetailPagePro
                         rel="noopener noreferrer"
                         className="btn-outline text-sm w-full flex items-center justify-center gap-2 mb-3"
                       >
-                        <Search className="w-4 h-4" />
+                        <Search className="w-4 h-4" aria-hidden="true" />
                         Search for this provider's website
                       </a>
                       <p className="text-xs text-neutral-600 leading-relaxed">

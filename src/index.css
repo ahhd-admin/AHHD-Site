@@ -73,7 +73,14 @@
   }
 
   .card {
-    @apply bg-white rounded-xl shadow-md border border-neutral-200 transition-shadow duration-200;
+    /* border-neutral-200 (~1.26:1 against white) failed WCAG 1.4.11
+       non-text contrast -- neutral-500 (~4.74:1) is the same shade
+       already used for borders elsewhere in the app (e.g. the search
+       input) once that same audit was applied there. This is the single
+       most-inherited class in the app (every card/card-hover on every
+       page), so fixing it here clears the largest cluster of flagged
+       instances at once. */
+    @apply bg-white rounded-xl shadow-md border border-neutral-500 transition-shadow duration-200;
   }
 
   .card-hover {
@@ -81,7 +88,7 @@
   }
 
   .input {
-    @apply w-full px-4 py-3 text-base border-2 border-neutral-300 rounded-lg focus:outline-none focus:ring-4 focus:ring-primary-200 focus:border-primary-500 transition-all;
+    @apply w-full px-4 py-3 text-base border-2 border-neutral-500 rounded-lg focus:outline-none focus:ring-4 focus:ring-primary-200 focus:border-primary-500 transition-all;
     user-select: text;
     -webkit-user-select: text;
   }

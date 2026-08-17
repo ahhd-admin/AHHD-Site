@@ -6,7 +6,7 @@ export default function TermsOfServicePage() {
     <div className="min-h-screen flex flex-col">
       <Header />
 
-      <main className="flex-1">
+      <main id="main-content" className="flex-1">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
           <div className="max-w-3xl">
             <h1 className="text-3xl md:text-4xl font-heading font-bold text-navy-800 mb-2">

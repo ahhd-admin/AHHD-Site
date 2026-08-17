@@ -25,7 +25,7 @@ export default function ManageContent() {
                 onClick={handleSignOut}
                 className="bg-slate-700 text-white hover:bg-slate-600 px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2"
               >
-                <LogOut className="w-4 h-4" />
+                <LogOut className="w-4 h-4" aria-hidden="true" />
                 Sign Out
               </button>
             </div>
@@ -33,9 +33,9 @@ export default function ManageContent() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <main id="main-content" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="card p-12 text-center">
-          <FileText className="w-16 h-16 text-neutral-400 mx-auto mb-4" />
+          <FileText className="w-16 h-16 text-neutral-400 mx-auto mb-4" aria-hidden="true" />
           <h2 className="text-xl font-heading font-semibold text-navy-800 mb-2">Content Management</h2>
           <p className="text-neutral-600">Create and edit educational articles and resources</p>
         </div>

@@ -30,7 +30,7 @@ export default function AdminLogin() {
         <div className="bg-white rounded-2xl shadow-xl p-8">
           <div className="flex items-center justify-center mb-8">
             <div className="w-16 h-16 bg-blue-600 rounded-xl flex items-center justify-center">
-              <LogIn className="w-8 h-8 text-white" />
+              <LogIn className="w-8 h-8 text-white" aria-hidden="true" />
             </div>
           </div>
 

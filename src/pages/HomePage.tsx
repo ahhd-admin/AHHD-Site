@@ -10,7 +10,7 @@ export default function HomePage() {
     <div className="min-h-screen flex flex-col">
       <Header />
 
-      <main className="flex-1">
+      <main id="main-content" className="flex-1">
         <SearchHero />
 
         <HowItWorks />
@@ -37,7 +37,7 @@ export default function HomePage() {
                       everywhere on the site instead of a stacked
                       icon-above-heading layout. */}
                   <div className="w-11 h-11 md:w-12 md:h-12 bg-primary-100 rounded-full flex items-center justify-center flex-shrink-0">
-                    <Award className="w-5 h-5 md:w-6 md:h-6 text-primary-700" />
+                    <Award className="w-5 h-5 md:w-6 md:h-6 text-primary-700" aria-hidden="true" />
                   </div>
                   <h3 className="text-xl font-heading font-semibold text-navy-800">
                     What is Accreditation?
@@ -51,7 +51,7 @@ export default function HomePage() {
               <div className="card p-8">
                 <div className="flex items-center gap-3 mb-3">
                   <div className="w-11 h-11 md:w-12 md:h-12 bg-success-100 rounded-full flex items-center justify-center flex-shrink-0">
-                    <Heart className="w-5 h-5 md:w-6 md:h-6 text-success-600" />
+                    <Heart className="w-5 h-5 md:w-6 md:h-6 text-success-600" aria-hidden="true" />
                   </div>
                   <h3 className="text-xl font-heading font-semibold text-navy-800">
                     Why It Matters

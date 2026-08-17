@@ -612,7 +612,7 @@ export default function ListingFormWizard({ locationId, onClose, onSave }: Listi
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl my-8 max-h-[90vh] overflow-y-auto">
-        <div className="sticky top-0 bg-white border-b border-neutral-200 z-10">
+        <div className="sticky top-0 bg-white border-b border-neutral-500 z-10">
           <div className="flex items-center justify-between p-6">
             <div>
               <h2 className="text-2xl font-bold text-navy-800">
@@ -625,14 +625,14 @@ export default function ListingFormWizard({ locationId, onClose, onSave }: Listi
                   </div>
                   <span className="text-sm font-medium">Quick Add</span>
                 </div>
-                <div className="w-12 h-0.5 bg-neutral-300" />
+                <div className="w-12 h-0.5 bg-neutral-500" />
                 <div className={`flex items-center gap-2 ${step >= 2 ? 'text-primary-600' : 'text-neutral-400'}`}>
                   <div className={`w-8 h-8 rounded-full flex items-center justify-center font-semibold ${step >= 2 ? 'bg-primary-100' : 'bg-neutral-100'}`}>
                     2
                   </div>
                   <span className="text-sm font-medium">Basic Info</span>
                 </div>
-                <div className="w-12 h-0.5 bg-neutral-300" />
+                <div className="w-12 h-0.5 bg-neutral-500" />
                 <div className={`flex items-center gap-2 ${step >= 3 ? 'text-primary-600' : 'text-neutral-400'}`}>
                   <div className={`w-8 h-8 rounded-full flex items-center justify-center font-semibold ${step >= 3 ? 'bg-primary-100' : 'bg-neutral-100'}`}>
                     3
@@ -643,9 +643,10 @@ export default function ListingFormWizard({ locationId, onClose, onSave }: Listi
             </div>
             <button
               onClick={onClose}
-              className="text-neutral-400 hover:text-neutral-600 transition-colors"
+              className="text-neutral-500 hover:text-neutral-600 transition-colors"
+              aria-label="Close"
             >
-              <X className="w-6 h-6" />
+              <X className="w-6 h-6" aria-hidden="true" />
             </button>
           </div>
         </div>
@@ -660,7 +661,7 @@ export default function ListingFormWizard({ locationId, onClose, onSave }: Listi
 
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
                 <div className="flex items-start gap-3">
-                  <Search className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                  <Search className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" aria-hidden="true" />
                   <div className="flex-1">
                     <p className="font-semibold text-blue-900 mb-2">Quick Import from Google Maps</p>
                     <p className="text-sm text-blue-800 mb-3">
@@ -668,7 +669,7 @@ export default function ListingFormWizard({ locationId, onClose, onSave }: Listi
                     </p>
                     {!googleMapsLoaded && (
                       <p className="text-xs text-amber-600 mb-2 flex items-center gap-1">
-                        <Loader className="w-3 h-3 animate-spin" />
+                        <Loader className="w-3 h-3 animate-spin" aria-hidden="true" />
                         Loading Google Maps...
                       </p>
                     )}
@@ -692,21 +693,22 @@ export default function ListingFormWizard({ locationId, onClose, onSave }: Listi
                         className="w-full px-4 py-3 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-neutral-100 disabled:cursor-not-allowed"
                       />
                       {searchingPlaces && (
-                        <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                          <Loader className="w-4 h-4 text-blue-600 animate-spin" />
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2" role="status">
+                          <Loader className="w-4 h-4 text-blue-600 animate-spin" aria-hidden="true" />
+                          <span className="sr-only">Searching…</span>
                         </div>
                       )}
 
                       {showAutocomplete && autocompleteResults.length > 0 && (
-                        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-neutral-300 rounded-lg shadow-lg z-50 max-h-80 overflow-y-auto">
+                        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-neutral-500 rounded-lg shadow-lg z-50 max-h-80 overflow-y-auto">
                           {autocompleteResults.map((result) => (
                             <button
                               key={result.place_id}
                               type="button"
                               onClick={() => selectPlace(result.place_id)}
-                              className="w-full text-left p-3 hover:bg-blue-50 transition-colors border-b border-neutral-100 last:border-b-0 flex items-start gap-3"
+                              className="w-full text-left p-3 hover:bg-blue-50 transition-colors border-b border-neutral-500 last:border-b-0 flex items-start gap-3"
                             >
-                              <MapPin className="w-4 h-4 text-neutral-500 flex-shrink-0 mt-1" />
+                              <MapPin className="w-4 h-4 text-neutral-500 flex-shrink-0 mt-1" aria-hidden="true" />
                               <span className="text-neutral-800">{result.description}</span>
                             </button>
                           ))}
@@ -727,11 +729,11 @@ export default function ListingFormWizard({ locationId, onClose, onSave }: Listi
                 </button>
               </div>
 
-              <div className="flex justify-between pt-6 border-t border-neutral-200">
+              <div className="flex justify-between pt-6 border-t border-neutral-500">
                 <button
                   type="button"
                   onClick={onClose}
-                  className="px-6 py-2.5 border border-neutral-300 text-neutral-700 rounded-lg hover:bg-neutral-50 transition-colors font-medium"
+                  className="px-6 py-2.5 border border-neutral-500 text-neutral-700 rounded-lg hover:bg-neutral-50 transition-colors font-medium"
                 >
                   Cancel
                 </button>
@@ -769,7 +771,7 @@ export default function ListingFormWizard({ locationId, onClose, onSave }: Listi
                     className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all ${
                       errors.address_line_1 && touched.address_line_1
                         ? 'border-red-500'
-                        : 'border-neutral-300'
+                        : 'border-neutral-500'
                     }`}
                   />
                   {errors.address_line_1 && touched.address_line_1 && (
@@ -786,7 +788,7 @@ export default function ListingFormWizard({ locationId, onClose, onSave }: Listi
                     value={formData.address_line_2}
                     onChange={(e) => handleInputChange('address_line_2', e.target.value)}
                     placeholder="Suite 100"
-                    className="w-full px-4 py-2.5 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
+                    className="w-full px-4 py-2.5 border border-neutral-500 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
                   />
                 </div>
 
@@ -799,7 +801,7 @@ export default function ListingFormWizard({ locationId, onClose, onSave }: Listi
                       onChange={(e) => handleInputChange('city', e.target.value)}
                       placeholder="Dallas"
                       className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all ${
-                        errors.city && touched.city ? 'border-red-500' : 'border-neutral-300'
+                        errors.city && touched.city ? 'border-red-500' : 'border-neutral-500'
                       }`}
                     />
                     {errors.city && touched.city && (
@@ -813,7 +815,7 @@ export default function ListingFormWizard({ locationId, onClose, onSave }: Listi
                       value={formData.state}
                       onChange={(e) => handleInputChange('state', e.target.value)}
                       className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all ${
-                        errors.state && touched.state ? 'border-red-500' : 'border-neutral-300'
+                        errors.state && touched.state ? 'border-red-500' : 'border-neutral-500'
                       }`}
                     >
                       <option value="">Select State</option>
@@ -843,7 +845,7 @@ export default function ListingFormWizard({ locationId, onClose, onSave }: Listi
                       className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all ${
                         errors.postal_code && touched.postal_code
                           ? 'border-red-500'
-                          : 'border-neutral-300'
+                          : 'border-neutral-500'
                       }`}
                     />
                     {errors.postal_code && touched.postal_code && (
@@ -858,17 +860,17 @@ export default function ListingFormWizard({ locationId, onClose, onSave }: Listi
                       value={formData.county}
                       readOnly
                       placeholder="Auto-populated"
-                      className="w-full px-4 py-2.5 border border-neutral-300 rounded-lg bg-neutral-50 text-neutral-600 cursor-not-allowed"
+                      className="w-full px-4 py-2.5 border border-neutral-500 rounded-lg bg-neutral-50 text-neutral-600 cursor-not-allowed"
                     />
                   </div>
                 </div>
               </div>
 
-              <div className="flex justify-between pt-6 border-t border-neutral-200">
+              <div className="flex justify-between pt-6 border-t border-neutral-500">
                 <button
                   type="button"
                   onClick={onClose}
-                  className="px-6 py-2.5 border border-neutral-300 text-neutral-700 rounded-lg hover:bg-neutral-50 transition-colors font-medium"
+                  className="px-6 py-2.5 border border-neutral-500 text-neutral-700 rounded-lg hover:bg-neutral-50 transition-colors font-medium"
                 >
                   Cancel
                 </button>
@@ -893,7 +895,7 @@ export default function ListingFormWizard({ locationId, onClose, onSave }: Listi
 
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                 <h4 className="text-sm font-semibold text-blue-900 mb-3 flex items-center gap-2">
-                  <MapPin className="w-4 h-4" />
+                  <MapPin className="w-4 h-4" aria-hidden="true" />
                   Address
                 </h4>
                 <div className="text-sm text-blue-800 space-y-1">
@@ -917,7 +919,7 @@ export default function ListingFormWizard({ locationId, onClose, onSave }: Listi
                   className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all ${
                     errors.organization_dba_name && touched.organization_dba_name
                       ? 'border-red-500'
-                      : 'border-neutral-300'
+                      : 'border-neutral-500'
                   }`}
                 />
                 {errors.organization_dba_name && touched.organization_dba_name && (
@@ -966,7 +968,7 @@ export default function ListingFormWizard({ locationId, onClose, onSave }: Listi
                   value={formData.organization_legal_name}
                   onChange={(e) => handleInputChange('organization_legal_name', e.target.value)}
                   placeholder="e.g., ABC Home Care Services, LLC"
-                  className="w-full px-4 py-2.5 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
+                  className="w-full px-4 py-2.5 border border-neutral-500 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
                 />
                 <p className="text-xs text-neutral-500 mt-1">
                   Recommended for accurate business records
@@ -982,7 +984,7 @@ export default function ListingFormWizard({ locationId, onClose, onSave }: Listi
                   value={formData.location_name}
                   onChange={(e) => handleInputChange('location_name', e.target.value)}
                   placeholder="e.g., North Dallas Office"
-                  className="w-full px-4 py-2.5 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
+                  className="w-full px-4 py-2.5 border border-neutral-500 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
                 />
                 <p className="text-xs text-neutral-500 mt-1">
                   Leave blank if organization has only one location
@@ -1004,7 +1006,7 @@ export default function ListingFormWizard({ locationId, onClose, onSave }: Listi
                     className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all ${
                       errors.public_phone && touched.public_phone
                         ? 'border-red-500'
-                        : 'border-neutral-300'
+                        : 'border-neutral-500'
                     }`}
                   />
                   {errors.public_phone && touched.public_phone && (
@@ -1022,7 +1024,7 @@ export default function ListingFormWizard({ locationId, onClose, onSave }: Listi
                     className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all ${
                       errors.public_email && touched.public_email
                         ? 'border-red-500'
-                        : 'border-neutral-300'
+                        : 'border-neutral-500'
                     }`}
                   />
                   {errors.public_email && touched.public_email && (
@@ -1039,7 +1041,7 @@ export default function ListingFormWizard({ locationId, onClose, onSave }: Listi
                   onChange={(e) => handleInputChange('website_url', e.target.value)}
                   placeholder="www.example.com"
                   className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all ${
-                    errors.website_url && touched.website_url ? 'border-red-500' : 'border-neutral-300'
+                    errors.website_url && touched.website_url ? 'border-red-500' : 'border-neutral-500'
                   }`}
                 />
                 {errors.website_url && touched.website_url && (
@@ -1047,7 +1049,7 @@ export default function ListingFormWizard({ locationId, onClose, onSave }: Listi
                 )}
               </div>
 
-              <div className="flex justify-between pt-6 border-t border-neutral-200">
+              <div className="flex justify-between pt-6 border-t border-neutral-500">
                 <button
                   type="button"
                   onClick={() => {
@@ -1056,7 +1058,7 @@ export default function ListingFormWizard({ locationId, onClose, onSave }: Listi
                       setManualEntry(false);
                     }
                   }}
-                  className="px-6 py-2.5 border border-neutral-300 text-neutral-700 rounded-lg hover:bg-neutral-50 transition-colors font-medium"
+                  className="px-6 py-2.5 border border-neutral-500 text-neutral-700 rounded-lg hover:bg-neutral-50 transition-colors font-medium"
                 >
                   Back
                 </button>
@@ -1097,8 +1099,8 @@ export default function ListingFormWizard({ locationId, onClose, onSave }: Listi
                     if (categoryServices.length === 0) return null;
 
                     return (
-                      <div key={categoryKey} className="border border-neutral-200 rounded-lg overflow-hidden">
-                        <div className="bg-neutral-100 px-3 py-2 border-b border-neutral-200">
+                      <div key={categoryKey} className="border border-neutral-500 rounded-lg overflow-hidden">
+                        <div className="bg-neutral-100 px-3 py-2 border-b border-neutral-500">
                           <h4 className="text-sm font-bold text-navy-800">{category.label}</h4>
                         </div>
                         <div className="p-3 grid grid-cols-1 md:grid-cols-2 gap-2">
@@ -1135,7 +1137,7 @@ export default function ListingFormWizard({ locationId, onClose, onSave }: Listi
                 </div>
               </div>
 
-              <div className="border-t border-neutral-200 pt-6">
+              <div className="border-t border-neutral-500 pt-6">
                 <h4 className="text-base font-bold text-navy-800 mb-4">Optional Enhancements</h4>
 
                 <div className="flex items-center gap-3 mb-4">
@@ -1168,7 +1170,7 @@ export default function ListingFormWizard({ locationId, onClose, onSave }: Listi
                         value={formData.insurance_accepted}
                         onChange={(e) => handleInputChange('insurance_accepted', e.target.value)}
                         placeholder="Medicare, Medicaid, Blue Cross, Aetna"
-                        className="w-full px-4 py-2.5 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
+                        className="w-full px-4 py-2.5 border border-neutral-500 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
                       />
                       <p className="text-xs text-neutral-500 mt-1">Separate multiple with commas</p>
                     </div>
@@ -1183,18 +1185,18 @@ export default function ListingFormWizard({ locationId, onClose, onSave }: Listi
                         onChange={(e) => handleInputChange('service_area_text', e.target.value)}
                         placeholder="e.g., Serving Harris County and surrounding areas"
                         rows={3}
-                        className="w-full px-4 py-2.5 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all resize-none"
+                        className="w-full px-4 py-2.5 border border-neutral-500 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all resize-none"
                       />
                     </div>
                   </div>
                 )}
               </div>
 
-              <div className="flex justify-between pt-6 border-t border-neutral-200">
+              <div className="flex justify-between pt-6 border-t border-neutral-500">
                 <button
                   type="button"
                   onClick={() => setStep(2)}
-                  className="px-6 py-2.5 border border-neutral-300 text-neutral-700 rounded-lg hover:bg-neutral-50 transition-colors font-medium"
+                  className="px-6 py-2.5 border border-neutral-500 text-neutral-700 rounded-lg hover:bg-neutral-50 transition-colors font-medium"
                 >
                   Back
                 </button>
@@ -1208,7 +1210,7 @@ export default function ListingFormWizard({ locationId, onClose, onSave }: Listi
                     'Submitting...'
                   ) : (
                     <>
-                      <CheckCircle2 className="w-4 h-4" />
+                      <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
                       Submit for Review
                     </>
                   )}

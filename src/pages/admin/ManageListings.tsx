@@ -107,7 +107,7 @@ export default function ManageListings() {
                 onClick={handleAddNew}
                 className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2"
               >
-                <Plus className="w-4 h-4" />
+                <Plus className="w-4 h-4" aria-hidden="true" />
                 Add New Listing
               </button>
               <a href="/admin/dashboard" className="bg-neutral-700 text-white hover:bg-neutral-600 px-4 py-2 rounded-lg font-medium transition-colors">
@@ -117,7 +117,7 @@ export default function ManageListings() {
                 onClick={handleSignOut}
                 className="bg-slate-700 text-white hover:bg-slate-600 px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2"
               >
-                <LogOut className="w-4 h-4" />
+                <LogOut className="w-4 h-4" aria-hidden="true" />
                 Sign Out
               </button>
             </div>
@@ -125,16 +125,16 @@ export default function ManageListings() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <main id="main-content" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="mb-6">
           <div className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-neutral-400 w-5 h-5" />
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-neutral-500 w-5 h-5" aria-hidden="true" />
             <input
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Search by location name or city..."
-              className="w-full pl-12 pr-4 py-3 border-2 border-neutral-300 rounded-xl focus:outline-none focus:ring-4 focus:ring-primary-200 focus:border-primary-500 transition-all"
+              className="w-full pl-12 pr-4 py-3 border-2 border-neutral-500 rounded-xl focus:outline-none focus:ring-4 focus:ring-primary-200 focus:border-primary-500 transition-all"
             />
           </div>
         </div>
@@ -145,7 +145,7 @@ export default function ManageListings() {
           </div>
         ) : filteredLocations.length === 0 ? (
           <div className="card p-8 text-center">
-            <FileText className="w-12 h-12 text-neutral-400 mx-auto mb-4" />
+            <FileText className="w-12 h-12 text-neutral-400 mx-auto mb-4" aria-hidden="true" />
             <p className="text-neutral-600">No locations found</p>
           </div>
         ) : (
@@ -182,16 +182,16 @@ export default function ManageListings() {
                       href={`/provider/${buildProviderSlug(location.organization?.organization_name || location.location_name || '', location.achc_source_id)}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="border-2 border-neutral-300 text-neutral-700 hover:bg-neutral-50 px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2"
+                      className="border-2 border-neutral-500 text-neutral-700 hover:bg-neutral-50 px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2"
                     >
-                      <Eye className="w-4 h-4" />
+                      <Eye className="w-4 h-4" aria-hidden="true" />
                       View
                     </a>
                     <button
                       onClick={() => handleEdit(location.location_id)}
                       className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2"
                     >
-                      <Edit className="w-4 h-4" />
+                      <Edit className="w-4 h-4" aria-hidden="true" />
                       Edit
                     </button>
                   </div>

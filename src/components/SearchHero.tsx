@@ -827,7 +827,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             bar's height following the row (via items-center + self-stretch)
             keeps the two groups visually separated regardless of how the
             right side wraps. */}
-        <span aria-hidden="true" className="self-stretch w-px bg-neutral-300" />
+        <span aria-hidden="true" className="self-stretch w-px bg-neutral-500" />
         {/* Its own flex-wrap group, not part of the same wrapping row as
             All Care -- keeps All Care a single fixed-position anchor on
             the left while only this group reflows across lines. */}
@@ -1445,7 +1445,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
   // marketing homepages) sidesteps all of that -- it's a normal,
   // non-overlapping region, so there's no sizing/z-index tradeoff to make.
   const searchPanel = (
-    <div className="bg-white rounded-2xl shadow-md border border-neutral-200 p-4">
+    <div className="bg-white rounded-2xl shadow-md border border-neutral-500 p-4">
       {/* Only shown once submitted -- "Where are you looking for care?"
           below already serves as the panel's heading before that point,
           so showing both together just repeated the same idea. This is
@@ -1461,7 +1461,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
         <div className="mb-3">
           <div className="flex items-center gap-2">
             <div className="w-9 h-9 bg-primary-100 rounded-full flex items-center justify-center flex-shrink-0">
-              <MapPin className="w-4 h-4 text-primary-700" />
+              <MapPin className="w-4 h-4 text-primary-700" aria-hidden="true" />
             </div>
             <p className="font-semibold text-navy-800 text-sm">Where are you looking for care?</p>
           </div>
@@ -1479,7 +1479,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
           sidebar next to the map -- too narrow for one row there too. */}
       <div className="flex flex-col sm:flex-row lg:flex-col gap-2">
         <div className="relative sm:flex-1 lg:flex-auto min-w-0">
-          <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 w-4 h-4 z-10 pointer-events-none" />
+          <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500 w-4 h-4 z-10 pointer-events-none" aria-hidden="true" />
           <input
             ref={inputRef}
             id="location-search"
@@ -1548,7 +1548,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
               ref={suggestionsRef}
               id="location-suggestions-listbox"
               role="listbox"
-              className="absolute z-[10000] mt-1 w-full bg-white border border-neutral-200 rounded-xl shadow-2xl overflow-hidden"
+              className="absolute z-[10000] mt-1 w-full bg-white border border-neutral-500 rounded-xl shadow-2xl overflow-hidden"
             >
               {suggestions.map((suggestion, index) => (
                 <button
@@ -1558,11 +1558,11 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
                   aria-selected={index === highlightedIndex}
                   onClick={() => handleSelectSuggestion(suggestion.place_id, suggestion.description)}
                   onMouseEnter={() => setHighlightedIndex(index)}
-                  className={`w-full px-4 py-3 text-left transition-colors border-b border-neutral-100 last:border-b-0 flex items-center gap-3 ${
+                  className={`w-full px-4 py-3 text-left transition-colors border-b border-neutral-500 last:border-b-0 flex items-center gap-3 ${
                     index === highlightedIndex ? 'bg-primary-50' : 'hover:bg-primary-50'
                   }`}
                 >
-                  <MapPin className="w-4 h-4 text-neutral-400 flex-shrink-0" />
+                  <MapPin className="w-4 h-4 text-neutral-500 flex-shrink-0" aria-hidden="true" />
                   <span className="text-neutral-800">{suggestion.description}</span>
                 </button>
               ))}
@@ -1578,7 +1578,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             aria-label="Use my location"
             title="Use my location"
           >
-            <Crosshair className={`w-4 h-4 ${gettingLocation ? 'animate-pulse' : ''}`} />
+            <Crosshair className={`w-4 h-4 ${gettingLocation ? 'animate-pulse' : ''}`} aria-hidden="true" />
             <span className="text-sm">My Location</span>
           </button>
 
@@ -1586,7 +1586,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             onClick={handleSearch}
             className="btn-primary flex-1 sm:min-w-[135px] lg:min-w-0 px-3 h-[44px] flex items-center justify-center gap-1.5 whitespace-nowrap"
           >
-            <Search className="w-4 h-4" />
+            <Search className="w-4 h-4" aria-hidden="true" />
             <span className="text-sm">Search</span>
           </button>
         </div>
@@ -1607,7 +1607,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             aria-label="What's the difference between these types of care?"
             aria-expanded={showCareTypeInfo}
           >
-            <HelpCircle className="w-3.5 h-3.5" />
+            <HelpCircle className="w-3.5 h-3.5" aria-hidden="true" />
           </button>
         </legend>
         {showCareTypeInfo && (
@@ -1653,7 +1653,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
               aria-label="Why this matters"
               aria-expanded={showStateInsuranceInfo}
             >
-              <HelpCircle className="w-3.5 h-3.5" />
+              <HelpCircle className="w-3.5 h-3.5" aria-hidden="true" />
             </button>
           </label>
           {showStateInsuranceInfo && (
@@ -1734,14 +1734,14 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
               top bar rather than floating above it -- that gap was what
               threw the two columns' top edges out of alignment before. */}
           <div className="flex-1 min-w-0">
-            <div className="rounded-2xl overflow-hidden shadow-md border border-neutral-200 bg-white">
+            <div className="rounded-2xl overflow-hidden shadow-md border border-neutral-500 bg-white">
               {/* Same reasoning as the map/grid area below -- stays
                   mounted through a refinement's loading=true window
                   (previous results are still showing) instead of
                   flickering out and back in on every Type of Care
                   change. */}
               {hasSubmittedSearch && !(loading && filteredLocations.length === 0) && (
-                <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-neutral-200 bg-neutral-50 animate-fade-in-up">
+                <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-neutral-500 bg-neutral-50 animate-fade-in-up">
                   {/* aria-live so a screen reader user hears the updated
                       count after submitting a search or changing Type of
                       Care -- previously silent, so the only way to tell a
@@ -1759,7 +1759,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
                       real 44px on mobile; sm: and up keep the original
                       auto-width-with-label sizing since desktop pointer
                       precision doesn't need it. */}
-                  <div className="flex items-center gap-1.5 bg-white border border-neutral-200 rounded-lg p-1 h-11 sm:h-[34px] flex-shrink-0">
+                  <div className="flex items-center gap-1.5 bg-white border border-neutral-500 rounded-lg p-1 h-11 sm:h-[34px] flex-shrink-0">
                     <button
                       onClick={() => setViewMode('map')}
                       className={`flex items-center justify-center w-11 sm:w-auto sm:gap-1.5 sm:px-3 h-9 sm:h-full rounded-md text-sm font-medium transition-all ${
@@ -1770,7 +1770,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
                       aria-label="Map view"
                       aria-pressed={viewMode === 'map'}
                     >
-                      <Map className="w-4 h-4" />
+                      <Map className="w-4 h-4" aria-hidden="true" />
                       <span className="hidden sm:inline">Map</span>
                     </button>
                     <button
@@ -1783,7 +1783,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
                       aria-label="Grid view"
                       aria-pressed={viewMode === 'list'}
                     >
-                      <LayoutGrid className="w-4 h-4" />
+                      <LayoutGrid className="w-4 h-4" aria-hidden="true" />
                       <span className="hidden sm:inline">Grid</span>
                     </button>
                   </div>
@@ -1795,7 +1795,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
                 // noticeably different tone from the neutral results
                 // header above it, read as "heads up," not an error.
                 <div className="flex items-start gap-2 px-4 py-2.5 border-b border-amber-200 bg-amber-50 text-sm text-amber-800 animate-fade-in-up">
-                  <HelpCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                  <HelpCircle className="w-4 h-4 flex-shrink-0 mt-0.5" aria-hidden="true" />
                   {/* The results-count text next to this already announces
                       via aria-live -- confirmed a screen reader user heard
                       the count change, but never WHY (a silent auto-widened
@@ -1829,7 +1829,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
                       equivalent list (MapSearch.tsx's ResultsList, below
                       the map) carries the same line in the same spot
                       relative to its own list. */}
-                  <p className="px-4 py-1.5 text-xs text-neutral-600 border-b border-neutral-200 bg-neutral-50">
+                  <p className="px-4 py-1.5 text-xs text-neutral-600 border-b border-neutral-500 bg-neutral-50">
                     AHHD doesn't endorse specific providers. Always verify accreditation and other details directly with them.
                   </p>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 min-h-[500px] bg-neutral-50 animate-fade-in-up">

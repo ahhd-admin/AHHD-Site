@@ -25,7 +25,7 @@ export default function HowItWorks() {
                 when stacked at narrower widths. */}
             <div className="flex items-center gap-3 mb-3">
               <div className="w-11 h-11 md:w-12 md:h-12 bg-success-100 rounded-full flex items-center justify-center flex-shrink-0">
-                <Shield className="w-5 h-5 md:w-6 md:h-6 text-success-600" />
+                <Shield className="w-5 h-5 md:w-6 md:h-6 text-success-600" aria-hidden="true" />
               </div>
               <h3 className="text-xl font-heading font-semibold text-navy-800">
                 We Find Accredited Providers
@@ -39,7 +39,7 @@ export default function HowItWorks() {
           <div>
             <div className="flex items-center gap-3 mb-3">
               <div className="w-11 h-11 md:w-12 md:h-12 bg-primary-100 rounded-full flex items-center justify-center flex-shrink-0">
-                <Search className="w-5 h-5 md:w-6 md:h-6 text-primary-700" />
+                <Search className="w-5 h-5 md:w-6 md:h-6 text-primary-700" aria-hidden="true" />
               </div>
               <h3 className="text-xl font-heading font-semibold text-navy-800">
                 You Search by Location
@@ -53,7 +53,7 @@ export default function HowItWorks() {
           <div>
             <div className="flex items-center gap-3 mb-3">
               <div className="w-11 h-11 md:w-12 md:h-12 bg-navy-100 rounded-full flex items-center justify-center flex-shrink-0">
-                <CheckCircle className="w-5 h-5 md:w-6 md:h-6 text-navy-600" />
+                <CheckCircle className="w-5 h-5 md:w-6 md:h-6 text-navy-600" aria-hidden="true" />
               </div>
               <h3 className="text-xl font-heading font-semibold text-navy-800">
                 You Connect With Confidence
