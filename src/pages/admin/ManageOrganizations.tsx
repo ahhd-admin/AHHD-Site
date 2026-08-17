@@ -119,7 +119,7 @@ export default function ManageOrganizations() {
                     <div className="mt-3">
                       <span className={`text-xs px-2 py-1 rounded-full font-medium ${
                         org.is_active
-                          ? 'bg-success-100 text-success-700'
+                          ? 'bg-success-100 text-success-900'
                           : 'bg-neutral-200 text-neutral-700'
                       }`}>
                         {org.is_active ? 'Active' : 'Inactive'}

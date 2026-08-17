@@ -152,7 +152,7 @@ export default function AdminDashboard() {
                 <p className="text-sm text-neutral-600">Items needing attention</p>
               </div>
               {stats.needsReview > 0 && (
-                <div className="absolute top-6 right-6 px-3 py-1 bg-red-600 text-white rounded-full text-sm font-bold">
+                <div className="absolute top-6 right-6 px-3 py-1 bg-red-800 text-white rounded-full text-sm font-bold">
                   {stats.needsReview}
                 </div>
               )}

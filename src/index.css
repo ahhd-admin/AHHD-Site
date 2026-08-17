@@ -97,12 +97,14 @@
     @apply inline-flex items-center px-3 py-1 rounded-full text-sm font-medium;
   }
 
+  /* -700 text on these -100 fills only cleared AA (4.84:1 / 4.51:1);
+     -900 clears AAA (8.57:1 / 8.15:1) on the same fill. */
   .badge-success {
-    @apply badge bg-success-100 text-success-700;
+    @apply badge bg-success-100 text-success-900;
   }
 
   .badge-warning {
-    @apply badge bg-warning-100 text-warning-700;
+    @apply badge bg-warning-100 text-warning-900;
   }
 
   /* primary-700 text on primary-100 measured 4.21:1 -- fails even the AA

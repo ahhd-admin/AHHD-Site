@@ -133,7 +133,7 @@ export default function ReviewQueue() {
                       <p className="text-sm text-neutral-600 mt-1">{location.location_name}</p>
                     )}
                   </div>
-                  <span className="px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-xs font-semibold">
+                  <span className="px-3 py-1 bg-amber-100 text-amber-900 rounded-full text-xs font-semibold">
                     Needs Review
                   </span>
                 </div>

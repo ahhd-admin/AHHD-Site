@@ -163,9 +163,9 @@ export default function ManageListings() {
                     <div className="mt-2 flex items-center gap-4 text-sm">
                       <span className={`px-3 py-1 rounded-full font-medium ${
                         location.listing_status === 'published'
-                          ? 'bg-success-100 text-success-700'
+                          ? 'bg-success-100 text-success-900'
                           : location.listing_status === 'needs_review'
-                          ? 'bg-warning-100 text-warning-700'
+                          ? 'bg-warning-100 text-warning-900'
                           : 'bg-neutral-200 text-neutral-700'
                       }`}>
                         {location.listing_status.replace('_', ' ')}
