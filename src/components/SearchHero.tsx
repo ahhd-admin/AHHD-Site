@@ -802,13 +802,12 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
           ? // Border color stays the same primary-700 in both states now
             // (moved to the shared classString above) -- only the fill
             // signals selection, rather than switching border color too.
-            // White text on this fill measured 3.78:1 -- the same
-            // primary-600-on-white failure already documented on
-            // .btn-outline above -- so the text is neutral-900 instead
-            // (Tailwind's stock near-black, this app has no custom
-            // neutral scale -- see index.css's .card comment), which
-            // clears AA at ~4.75:1.
-            'bg-primary-600 text-neutral-900'
+            // primary-600 fill read as too dark against near-black text
+            // (only 4.75:1, barely over the 4.5 AA floor) -- primary-400
+            // with navy-800 text measures 6.38:1, comfortably clear, and
+            // matches the same fill/text pairing already used for badges
+            // elsewhere (ProviderCard, MapSearch use primary-100/navy-800).
+            'bg-primary-400 text-navy-800'
           : 'bg-white text-neutral-700 hover:bg-primary-50'
       }`}
     >
