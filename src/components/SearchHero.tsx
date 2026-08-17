@@ -797,17 +797,16 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
       type="button"
       onClick={chip.onClick}
       aria-pressed={chip.selected}
-      className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold border-2 border-navy-800 transition-colors whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-1 ${
+      className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold border-2 border-navy-900 transition-colors whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-1 ${
         chip.selected
           ? // primary-400 fill only measures 2.31:1 against a white page
             // background on its own -- short of the 3:1 UI-boundary
             // minimum (WCAG 1.4.11) -- so a same-color or missing border
             // isn't an option here; the border has to actually contrast
-            // against the fill. navy-800 clears 3:1 against both this
-            // fill (6.38:1) and the unselected white fill (14.71:1), and
-            // matches this state's own text color (6.38:1 for the text
-            // itself, comfortably past the 4.5:1 AA floor).
-            'bg-primary-400 text-navy-800'
+            // against the fill. navy-900 text/border clears AAA (7.22:1)
+            // against this fill, not just the 4.5:1 AA floor, and still
+            // clears 3:1 against the unselected white fill easily.
+            'bg-primary-400 text-navy-900'
           : 'bg-white text-neutral-700 hover:bg-primary-50'
       }`}
     >
