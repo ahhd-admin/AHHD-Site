@@ -797,9 +797,18 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
       type="button"
       onClick={chip.onClick}
       aria-pressed={chip.selected}
-      className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold border-2 border-navy-900 transition-colors whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-1 ${
+      className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold border-2 border-navy-800 transition-colors whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-1 ${
         chip.selected
-          ? 'bg-primary-400 text-navy-900'
+          ? // This fill's own contrast against a white page background is
+            // low on its own -- short of the 3:1 UI-boundary minimum
+            // (WCAG 1.4.11) -- so a same-color or missing border isn't an
+            // option; the border has to actually contrast against the
+            // fill. navy-800 text/border clears AAA (11.33:1) against
+            // this fill, and clears 3:1 against the unselected white
+            // fill easily. Same primary-100/navy-800 pairing already
+            // used for service-type tags on ProviderCard/MapSearch, for
+            // consistency across the app.
+            'bg-primary-100 text-navy-800'
           : 'bg-white text-neutral-700 hover:bg-primary-50'
       }`}
     >
