@@ -799,7 +799,16 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
       aria-pressed={chip.selected}
       className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold border-2 transition-colors whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-1 ${
         chip.selected
-          ? 'bg-primary-700 border-primary-700 text-white'
+          ? // Was bg-primary-700 text-white -- identical fill/text to
+            // .btn-primary (the Search button sitting directly above this
+            // row), which read as a second row of submit buttons rather
+            // than toggleable filter tags. Switched to the light-fill tag
+            // treatment already used elsewhere in this same file (the
+            // Map/Grid view toggle's active state) and on ProviderCard's
+            // service-type pills -- navy-800 on primary-100 measures
+            // 11.33:1 (AAA) -- so "selected" now reads as a distinct tag
+            // state, not a duplicate button.
+            'bg-primary-100 border-primary-700 text-navy-800'
           : 'bg-white border-neutral-500 text-neutral-700 hover:border-primary-600 hover:text-primary-700'
       }`}
     >
