@@ -797,19 +797,19 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
       type="button"
       onClick={chip.onClick}
       aria-pressed={chip.selected}
-      className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold border-2 transition-colors whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-1 ${
+      className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold border-2 border-primary-700 transition-colors whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-1 ${
         chip.selected
-          ? // Was bg-primary-700 text-white -- identical fill/text to
-            // .btn-primary (the Search button sitting directly above this
-            // row), which read as a second row of submit buttons rather
-            // than toggleable filter tags. Switched to the light-fill tag
-            // treatment already used elsewhere in this same file (the
-            // Map/Grid view toggle's active state) and on ProviderCard's
-            // service-type pills -- navy-800 on primary-100 measures
-            // 11.33:1 (AAA) -- so "selected" now reads as a distinct tag
-            // state, not a duplicate button.
-            'bg-primary-100 border-primary-700 text-navy-800'
-          : 'bg-white border-neutral-500 text-neutral-700 hover:border-primary-600 hover:text-primary-700'
+          ? // Border color stays the same primary-700 in both states now
+            // (moved to the shared classString above) -- only the fill
+            // signals selection, rather than switching border color too.
+            // White text on this fill measured 3.78:1 -- the same
+            // primary-600-on-white failure already documented on
+            // .btn-outline above -- so the text is neutral-900 instead
+            // (Tailwind's stock near-black, this app has no custom
+            // neutral scale -- see index.css's .card comment), which
+            // clears AA at ~4.75:1.
+            'bg-primary-600 text-neutral-900'
+          : 'bg-white text-neutral-700 hover:bg-primary-50'
       }`}
     >
       {chip.label}
