@@ -113,6 +113,11 @@ const initialRadiusParam = initialSearchParams.get('radius');
 
 function SearchHeroContent({ onSearch }: SearchHeroProps) {
   const [location, setLocation] = useState(initialLocationParam);
+  // Hitting Search with nothing typed used to just silently do nothing
+  // (see handleSearch's early return) -- reads as a broken button rather
+  // than a validation issue. This mirrors that same information back as
+  // an actual visible cue instead.
+  const [locationError, setLocationError] = useState(false);
   // Defaults to nothing checked -- chips that look pre-selected read as
   // an active filter already in effect, and someone tapping around
   // ("are these on? let me check what's off") could misclick one back
@@ -1049,7 +1054,12 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
 
   const handleSearch = async () => {
     setShowSuggestions(false);
-    if (!location.trim()) return;
+    if (!location.trim()) {
+      setLocationError(true);
+      inputRef.current?.focus();
+      return;
+    }
+    setLocationError(false);
 
     // Re-clicking Search with the exact same location text as last time
     // (refining Type of Care/Radius and hitting Search again, rather than
@@ -1501,6 +1511,7 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             onChange={(e) => {
               const value = e.target.value;
               setLocation(value);
+              setLocationError(false);
               setUserCoords(null);
               setSearchBounds(null);
               setBoundaryPolygon(null);
@@ -1547,9 +1558,20 @@ function SearchHeroContent({ onSearch }: SearchHeroProps) {
             aria-controls="location-suggestions-listbox"
             aria-autocomplete="list"
             aria-activedescendant={highlightedIndex >= 0 ? `location-suggestion-${highlightedIndex}` : undefined}
-            className="w-full pl-9 pr-3 h-[48px] text-base border-2 border-neutral-500 rounded-lg focus:outline-none focus:ring-4 focus:ring-primary-600 focus:border-primary-500 transition-all"
+            aria-invalid={locationError}
+            aria-describedby={locationError ? 'location-search-error' : undefined}
+            className={`w-full pl-9 pr-3 h-[48px] text-base border-2 rounded-lg focus:outline-none focus:ring-4 focus:border-primary-500 transition-all ${
+              locationError
+                ? 'border-error-600 focus:ring-error-200'
+                : 'border-neutral-500 focus:ring-primary-600'
+            }`}
             autoComplete="off"
           />
+          {locationError && (
+            <p id="location-search-error" role="alert" className="mt-1.5 text-sm text-error-700">
+              Enter a city, state, address, or ZIP to search
+            </p>
+          )}
           {showSuggestions && suggestions.length > 0 && (
             // Was border-2 border-neutral-500 -- identical border weight/
             // color to the input field directly above it, which read as a
